@@ -117,6 +117,30 @@ describe('PaymentStore', () => {
     expect(mandateMoney(db, mandate)).toEqual({ spent: 0, reserved: 0 });
   });
 
+  it.each([
+    [19, 'human', 'approved', false],
+    [20, 'judge', 'approved', false],
+    [39, 'judge', 'approved', false],
+    [39, 'human', 'pending', false],
+    [20, 'human', 'approved', true],
+    [39, 'human', 'approved', true],
+    [40, 'judge', 'approved', true],
+  ] as const)(
+    'signing at trust %s, %s/%s requires current authority',
+    async (trust, stage, outcome, allowed) => {
+      const { store, mandate, db, paymentIn } = setup();
+      const id = await paymentIn('RESERVED');
+      db.sqlite
+        .prepare(
+          'UPDATE decisions SET stage = ?, outcome = ? WHERE id = (SELECT decision_id FROM payments WHERE id = ?)',
+        )
+        .run(stage, outcome, id);
+      db.sqlite.prepare('UPDATE sessions SET trust = ? WHERE id = ?').run(trust, mandate.sessionId);
+      expect(await store.markSigned(id, SIGNATURE)).toBe(allowed);
+      expect((await store.get(id))?.state).toBe(allowed ? 'SIGNED' : 'RESERVED');
+    },
+  );
+
   it('returns null for an unknown payment', async () => {
     expect(await setup().store.get('pay_missing')).toBeNull();
   });

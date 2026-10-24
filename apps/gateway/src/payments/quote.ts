@@ -5,6 +5,8 @@ import { readCapped } from './read-capped.js';
 export const NETWORK = 'eip155:84532';
 // Circle's test USDC on Base Sepolia.
 const DEFAULT_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+// Five minutes, matching the demo requirements; merchant input cannot extend this policy.
+export const MAX_AUTHORIZATION_SECONDS = 300;
 const TIMEOUT_MS = 3_000;
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -117,7 +119,22 @@ function selectRequirements(paymentRequired: unknown): Record<string, unknown> {
   if (typeof match.payTo !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(match.payTo)) {
     throw new QuoteError('QUOTE_INVALID', `payTo ${JSON.stringify(match.payTo)} is not an address`);
   }
+  validateTimeout(match.maxTimeoutSeconds);
   return match;
+}
+
+export function validateTimeout(value: unknown): asserts value is number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > MAX_AUTHORIZATION_SECONDS
+  ) {
+    throw new QuoteError(
+      'QUOTE_INVALID',
+      `maxTimeoutSeconds must be an integer in 1..${MAX_AUTHORIZATION_SECONDS}`,
+    );
+  }
 }
 
 // Release the connection without reading a body we don't need.

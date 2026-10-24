@@ -23,14 +23,15 @@ export function createPayments(deps: {
   clock?: Clock;
 }): PaymentsModule {
   const clock = deps.clock ?? systemClock;
+  const reconcile = createReconcile(deps.store, {
+    rpcUrl: deps.config.rpcUrl,
+    wallet: privateKeyToAccount(deps.config.walletPrivateKey).address,
+    onStuck: deps.config.onStuck,
+    clock,
+  });
   return {
     getQuote,
-    pay: createPay(deps.store, deps.config.walletPrivateKey, clock),
-    reconcile: createReconcile(deps.store, {
-      rpcUrl: deps.config.rpcUrl,
-      wallet: privateKeyToAccount(deps.config.walletPrivateKey).address,
-      onStuck: deps.config.onStuck,
-      clock,
-    }),
+    pay: createPay(deps.store, deps.config.walletPrivateKey, clock, reconcile),
+    reconcile,
   };
 }

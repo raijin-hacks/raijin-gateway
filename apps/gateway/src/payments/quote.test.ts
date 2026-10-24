@@ -32,7 +32,10 @@ const servers: ReturnType<typeof createServer>[] = [];
 async function merchant(handler: Handler): Promise<string> {
   const server = createServer(handler);
   servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 

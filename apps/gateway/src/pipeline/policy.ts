@@ -136,14 +136,7 @@ export function tier0(
         )
         .get(agent.session.id, id, route.canonical.url, quote.amount, now - 10000) as { n: number };
       if (duplicates.n >= 2) return { reason: 'DUPLICATE' };
-      const facts = payeeFacts(deps, agent, quote.payee);
-      const approvedPayees = sql
-        .prepare(
-          "SELECT COUNT(DISTINCT payee) AS n FROM decisions WHERE mandate_id = ? AND stage = 'judge' AND outcome = 'approved'",
-        )
-        .get(agent.mandate.id) as { n: number };
-      if (facts.first_seen && approvedPayees.n >= 3 && !reviewed.includes('NEW_PAYEE_LIMIT'))
-        return { reason: 'NEW_PAYEE_LIMIT' };
+      if (newPayeeLimit(deps, agent, quote.payee, reviewed)) return { reason: 'NEW_PAYEE_LIMIT' };
       const hold = createFunds(deps.db, deps.clock).reserve({
         mandateId: agent.mandate.id,
         decisionId: id,
@@ -154,6 +147,22 @@ export function tier0(
       return hold.ok ? { paymentId: hold.paymentId } : { reason: hold.code };
     })
     .immediate();
+}
+// Call inside the same transaction that commits the approval: judge calls do not serialize payees.
+export function newPayeeLimit(
+  deps: Deps,
+  agent: AgentContext,
+  payee: string,
+  reviewed: readonly ReasonCode[],
+): boolean {
+  if (reviewed.includes('NEW_PAYEE_LIMIT') || !payeeFacts(deps, agent, payee).first_seen)
+    return false;
+  const approved = deps.db.sqlite
+    .prepare(
+      "SELECT COUNT(DISTINCT payee) AS n FROM decisions WHERE mandate_id = ? AND stage = 'judge' AND outcome = 'approved'",
+    )
+    .get(agent.mandate.id) as { n: number };
+  return approved.n >= 3;
 }
 export function payeeFacts(deps: Deps, agent: AgentContext, payee: string) {
   const rows = deps.db.sqlite
