@@ -9,3 +9,7 @@ onlyBuiltDependencies:
 
 # Supply-chain guard: never install a version published less than 7 days ago.
 minimumReleaseAge: 10080
+
+overrides:
+  # Recharts (dashboard) pulls immer ^11; the newest 11.x was under two weeks old when added.
+  immer: 11.1.21

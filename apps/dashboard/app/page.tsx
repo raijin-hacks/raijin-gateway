@@ -1,0 +1,18 @@
+import ApprovalQueue from './approval-queue';
+import EventFeed from './event-feed';
+import MandateForm from './mandate-form';
+import StatsHeader from './stats-header';
+import TrustGraph from './trust-graph';
+
+export default function Home() {
+  return (
+    <main className="p-6">
+      <h1 className="mb-4 text-xl font-semibold">Agent Payment Firewall</h1>
+      <StatsHeader />
+      <MandateForm />
+      <ApprovalQueue />
+      <TrustGraph />
+      <EventFeed />
+    </main>
+  );
+}
