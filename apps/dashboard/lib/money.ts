@@ -2,3 +2,8 @@
 export function formatMoney(atomic: number): string {
   return "$" + (atomic / 1000000).toFixed(3);
 }
+
+// Converts a dollar amount typed in a form to integer atomic USDC, e.g. 2 -> 2000000.
+export function dollarsToAtomic(dollars: number): number {
+  return Math.round(dollars * 1000000);
+}
