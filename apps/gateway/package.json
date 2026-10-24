@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "node dist/src/main.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx --env-file-if-exists=../../.env src/db/seed-cli.ts"
   },
   "dependencies": {
     "@apf/contracts": "workspace:*",
