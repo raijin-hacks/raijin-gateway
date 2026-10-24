@@ -50,6 +50,12 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
         AND m.status = 'active' AND m.expires_at > :now AND s.status = 'active' AND s.trust >= 20)`);
   const markSubmitted = transition('SIGNED', 'SUBMITTED');
   const markUnknown = transition('SUBMITTED', 'UNKNOWN');
+  // Not a state change: only the first reply is kept, and only once a paid request may have gone out.
+  const saveResponse = sqlite.prepare(
+    `UPDATE payments SET response_json = :response_json
+      WHERE id = :payment_id AND response_json IS NULL
+        AND state IN ('SUBMITTED','UNKNOWN','SETTLED')`,
+  );
 
   /**
    * Settle and fail share one shape, run as one IMMEDIATE transaction: the payment row changes
@@ -110,6 +116,13 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
     },
     async listUnresolved() {
       return selectUnresolved.all().map((row) => row.id);
+    },
+    async saveResponse(paymentId, response) {
+      const result = saveResponse.run({
+        payment_id: paymentId,
+        response_json: JSON.stringify(response),
+      });
+      return result.changes === 1;
     },
   };
 }

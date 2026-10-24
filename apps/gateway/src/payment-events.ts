@@ -24,5 +24,7 @@ export function withPaymentEvents(store: PaymentStore, bus: EventBus, clock: Clo
     markUnknown: async (id) => publish(id, await store.markUnknown(id)),
     settle: async (id, hash) => publish(id, await store.settle(id, hash)),
     fail: async (id) => publish(id, await store.fail(id)),
+    // Not a state change, so no event.
+    saveResponse: (id, response) => store.saveResponse(id, response),
   };
 }

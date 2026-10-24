@@ -1,5 +1,6 @@
 import type { PaymentState, PaymentStore } from '@apf/contracts';
 import { describe, expect, it } from 'vitest';
+import { openDb } from '../../src/db/client.js';
 import { createPaymentStore } from '../../src/db/payment-store.js';
 import {
   createMandate,
@@ -228,5 +229,52 @@ describe('PaymentStore', () => {
     );
     await expect(store.fail(id)).rejects.toThrow('blocked');
     expect(await snapshot(id)).toEqual(before);
+  });
+});
+
+describe('PaymentStore.saveResponse', () => {
+  const RESPONSE = { status_code: 200, content_type: 'application/json', body: '{"prices":[1]}' };
+  const saved = (db: ReturnType<typeof setup>['db'], id: string) =>
+    one<{ response_json: string | null }>(db, 'SELECT response_json FROM payments WHERE id = ?', id)
+      ?.response_json ?? null;
+
+  it.each(STATES)('from %s: saved only once a paid request may have gone out', async (state) => {
+    const { db, store, paymentIn, snapshot } = setup();
+    const id = await paymentIn(state);
+    const before = await snapshot(id);
+
+    const changed = await store.saveResponse(id, RESPONSE);
+
+    const allowed = state === 'SUBMITTED' || state === 'UNKNOWN' || state === 'SETTLED';
+    expect(changed).toBe(allowed);
+    expect(saved(db, id)).toBe(allowed ? JSON.stringify(RESPONSE) : null);
+    expect(await snapshot(id)).toEqual(before); // state, money and updated_at untouched
+  });
+
+  it('keeps the first reply: a later save changes nothing', async () => {
+    const { db, store, paymentIn } = setup();
+    const id = await paymentIn('UNKNOWN');
+
+    expect(await store.saveResponse(id, RESPONSE)).toBe(true);
+    expect(await store.saveResponse(id, { ...RESPONSE, body: 'second' })).toBe(false);
+    expect(saved(db, id)).toBe(JSON.stringify(RESPONSE));
+  });
+
+  it('survives a restart, and is still there after the payment settles', async () => {
+    const { db, clock, paymentIn, store } = setup();
+    const id = await paymentIn('UNKNOWN');
+    await store.saveResponse(id, RESPONSE);
+    const path = db.sqlite.name;
+    db.sqlite.close();
+
+    const reopened = openDb(path);
+    expect(await createPaymentStore(reopened, clock).settle(id, '0xtxhash')).toBe(true);
+    expect(saved(reopened, id)).toBe(JSON.stringify(RESPONSE));
+    reopened.sqlite.close();
+  });
+
+  it('an unknown payment saves nothing', async () => {
+    const { store } = setup();
+    expect(await store.saveResponse('pay_missing', RESPONSE)).toBe(false);
   });
 });
