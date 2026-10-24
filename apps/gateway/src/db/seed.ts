@@ -16,33 +16,34 @@ export const DEMO = {
     `grt_standing_${role}_${endpointId.replace(/^end_/, '')}`,
 } as const;
 
-const ROLES = [
-  {
-    id: DEMO.roles.research,
-    name: 'research',
-    policy_text:
-      'Research agents may buy market data needed for the assigned report. No bulk datasets, subscriptions or unrelated data.',
-    per_call_cap: ONE_USDC,
-    velocity_per_min: 20,
-    baseline_trust: 70,
-    grant_trust_threshold: TRUST_THRESHOLDS.grants,
-  },
-  {
-    id: DEMO.roles.bulk,
-    name: 'bulk',
-    policy_text:
-      'Bulk agents may buy routine data in volume from merchants selected for the mandate. No subscriptions or unrelated data.',
-    per_call_cap: ONE_USDC,
-    velocity_per_min: 120,
-    baseline_trust: 70,
-    grant_trust_threshold: TRUST_THRESHOLDS.grants,
-  },
-];
+const RESEARCH = {
+  id: DEMO.roles.research,
+  name: 'research',
+  policy_text:
+    'Research agents may buy market data needed for the assigned report. No bulk datasets, subscriptions or unrelated data.',
+  per_call_cap: ONE_USDC,
+  velocity_per_min: 20,
+  baseline_trust: 70,
+  grant_trust_threshold: TRUST_THRESHOLDS.grants,
+};
+
+const BULK = {
+  id: DEMO.roles.bulk,
+  name: 'bulk',
+  policy_text:
+    'Bulk agents may buy routine data in volume from merchants selected for the mandate. No subscriptions or unrelated data.',
+  per_call_cap: ONE_USDC,
+  velocity_per_min: 120,
+  baseline_trust: 70,
+  grant_trust_threshold: TRUST_THRESHOLDS.grants,
+};
+
+const ROLES = [RESEARCH, BULK];
 
 const AGENTS = [
-  { id: DEMO.agents.pricing, role_id: DEMO.roles.research, name: 'Pricing researcher' },
-  { id: DEMO.agents.logistics, role_id: DEMO.roles.research, name: 'Logistics analyst' },
-  { id: DEMO.agents.bulk, role_id: DEMO.roles.bulk, name: 'Bulk loader' },
+  { id: DEMO.agents.pricing, role: RESEARCH, name: 'Pricing researcher' },
+  { id: DEMO.agents.logistics, role: RESEARCH, name: 'Logistics analyst' },
+  { id: DEMO.agents.bulk, role: BULK, name: 'Bulk loader' },
 ];
 
 /** Seeds everything in one transaction; any error (such as an unknown role) writes nothing. */
@@ -50,7 +51,6 @@ export function seedDatabase(db: Db, catalog: Catalog, clock: Clock): void {
   const { orm } = db;
   const now = clock.now();
   const roleIdByName = new Map(ROLES.map((role) => [role.name, role.id]));
-  const baselineByRole = new Map(ROLES.map((role) => [role.id, role.baseline_trust]));
 
   db.sqlite.transaction(() => {
     orm
@@ -72,18 +72,18 @@ export function seedDatabase(db: Db, catalog: Catalog, clock: Clock): void {
         .run();
     }
 
-    for (const agent of AGENTS) {
+    for (const { id, role, name } of AGENTS) {
       orm
         .insert(agents)
         .values({
-          ...agent,
+          id,
+          name,
+          role_id: role.id,
           tenant_id: DEMO.tenantId,
-          trust: baselineByRole.get(agent.role_id) ?? 0,
+          trust: role.baseline_trust,
         })
-        .onConflictDoUpdate({
-          target: agents.id,
-          set: { name: agent.name, role_id: agent.role_id },
-        })
+        // Trust is left alone on a rerun: it is the agent's history, not seed data.
+        .onConflictDoUpdate({ target: agents.id, set: { name, role_id: role.id } })
         .run();
     }
 

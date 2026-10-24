@@ -55,10 +55,10 @@ export function createMandate(deps: Deps): Handler<AppEnv> {
   };
 }
 
-export function closeMandate(deps: Deps): Handler<AppEnv> {
+export function closeMandate(deps: Deps): Handler<AppEnv, '/mandates/:id/close'> {
   const repo = createMandateRepo(deps.db);
   return (c) => {
-    const mandateId = c.req.param('id') ?? '';
+    const mandateId = c.req.param('id');
     if (!repo.close(mandateId)) return notFound(c);
     deps.log.info('mandate closed', { mandate_id: mandateId });
     return c.json({ ok: true });

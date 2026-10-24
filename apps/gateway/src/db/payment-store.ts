@@ -17,57 +17,67 @@ interface PaymentRow {
   authorization_json: string | null;
 }
 
+/** What settle and fail need to move a payment's money. */
+interface MoneyRow {
+  amount: Money;
+  mandate_id: string;
+  day: string;
+}
+
 export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
   const sqlite = db.sqlite;
   const selectPayment = sqlite.prepare<[string], PaymentRow>(
     `SELECT id, mandate_id, amount, payee, state, nonce, valid_before, authorization_json
        FROM payments WHERE id = ?`,
   );
-  const selectMoney = sqlite.prepare<[string], { amount: Money; mandate_id: string; day: string }>(
+  const selectMoney = sqlite.prepare<[string], MoneyRow>(
     'SELECT amount, mandate_id, day FROM payments WHERE id = ?',
   );
   const selectUnresolved = sqlite.prepare<[], { id: string }>(
     `SELECT id FROM payments WHERE state IN ('SIGNED','SUBMITTED','UNKNOWN') ORDER BY updated_at, id`,
   );
-  const markSigned = sqlite.prepare(
-    `UPDATE payments SET state = 'SIGNED', nonce = :nonce, valid_before = :valid_before,
-            authorization_json = :authorization_json, updated_at = :now
-      WHERE id = :payment_id AND state = 'RESERVED'`,
+  /** A plain state change from `from` to `to`; `extraSet` adds columns to the SET list. */
+  const transition = (from: PaymentState, to: PaymentState, extraSet = '') =>
+    sqlite.prepare(
+      `UPDATE payments SET state = '${to}'${extraSet}, updated_at = :now
+        WHERE id = :payment_id AND state = '${from}'`,
+    );
+  const markSigned = transition(
+    'RESERVED',
+    'SIGNED',
+    ', nonce = :nonce, valid_before = :valid_before, authorization_json = :authorization_json',
   );
-  const markSubmitted = sqlite.prepare(
-    `UPDATE payments SET state = 'SUBMITTED', updated_at = :now
-      WHERE id = :payment_id AND state = 'SIGNED'`,
-  );
-  const markUnknown = sqlite.prepare(
-    `UPDATE payments SET state = 'UNKNOWN', updated_at = :now
-      WHERE id = :payment_id AND state = 'SUBMITTED'`,
-  );
-  const settlePayment = sqlite.prepare(CONTRACT_SQL.settlePayment);
-  const settleMandate = sqlite.prepare(CONTRACT_SQL.settleMandate);
-  const failPayment = sqlite.prepare(CONTRACT_SQL.failPayment);
-  const failMandate = sqlite.prepare(CONTRACT_SQL.failMandate);
-  const tenantRelease = sqlite.prepare(EXTRA_SQL.tenantRelease);
+  const markSubmitted = transition('SIGNED', 'SUBMITTED');
+  const markUnknown = transition('SUBMITTED', 'UNKNOWN');
 
-  // Settle and fail each run in one IMMEDIATE transaction. The payment row changes first, and
-  // money moves only if it did, so a replay or a race can never move money twice.
-  const settle = sqlite.transaction((paymentId: string, txHash: string): boolean => {
-    const payment = selectMoney.get(paymentId);
-    if (!payment) return false;
-    const changed = settlePayment.run({ payment_id: paymentId, tx: txHash, now: clock.now() });
-    if (changed.changes !== 1) return false;
-    settleMandate.run({ amount: payment.amount, mandate_id: payment.mandate_id });
+  /**
+   * Settle and fail share one shape, run as one IMMEDIATE transaction: the payment row changes
+   * first (a contract statement), and money moves only if it did, so a replay or a race can
+   * never move money twice.
+   */
+  const moneyTransition = (paymentSql: string, moveMoney: (payment: MoneyRow) => void) => {
+    const changePayment = sqlite.prepare(paymentSql);
+    return sqlite.transaction((paymentId: string, params: Record<string, unknown>): boolean => {
+      const payment = selectMoney.get(paymentId);
+      if (!payment) return false;
+      const changed = changePayment.run({ payment_id: paymentId, now: clock.now(), ...params });
+      if (changed.changes !== 1) return false;
+      moveMoney(payment);
+      return true;
+    });
+  };
+
+  const settleMandate = sqlite.prepare(CONTRACT_SQL.settleMandate);
+  const settle = moneyTransition(CONTRACT_SQL.settlePayment, (p) => {
+    settleMandate.run({ amount: p.amount, mandate_id: p.mandate_id });
     // tenant_daily already counts this amount (it holds spent + reserved), so it doesn't change.
-    return true;
   });
 
-  const fail = sqlite.transaction((paymentId: string): boolean => {
-    const payment = selectMoney.get(paymentId);
-    if (!payment) return false;
-    const changed = failPayment.run({ payment_id: paymentId, now: clock.now() });
-    if (changed.changes !== 1) return false;
-    failMandate.run({ amount: payment.amount, mandate_id: payment.mandate_id });
-    tenantRelease.run({ amount: payment.amount, mandate_id: payment.mandate_id, day: payment.day });
-    return true;
+  const failMandate = sqlite.prepare(CONTRACT_SQL.failMandate);
+  const tenantRelease = sqlite.prepare(EXTRA_SQL.tenantRelease);
+  const fail = moneyTransition(CONTRACT_SQL.failPayment, (p) => {
+    failMandate.run({ amount: p.amount, mandate_id: p.mandate_id });
+    tenantRelease.run({ amount: p.amount, mandate_id: p.mandate_id, day: p.day });
   });
 
   return {
@@ -92,10 +102,10 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
       return markUnknown.run({ payment_id: paymentId, now: clock.now() }).changes === 1;
     },
     async settle(paymentId, txHash) {
-      return settle.immediate(paymentId, txHash);
+      return settle.immediate(paymentId, { tx: txHash });
     },
     async fail(paymentId) {
-      return fail.immediate(paymentId);
+      return fail.immediate(paymentId, {});
     },
     async listUnresolved() {
       return selectUnresolved.all().map((row) => row.id);
