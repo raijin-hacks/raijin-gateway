@@ -1,6 +1,6 @@
 // P4/P5 · pay(paymentId, quote) and reconcile(paymentId), written before the implementation.
 // Each test runs a throwaway local merchant; signing uses a random key, so nothing touches the chain.
-import { afterAll as after, test } from 'vitest';
+import { afterAll as after, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -9,6 +9,24 @@ import { createPayments } from './index.js';
 import { getQuote } from './quote.js';
 import { systemClock } from '../clock.js';
 import { MemoryPaymentStore } from './testing/memory-store.js';
+
+// Controlled chain evidence for paid-request tests. The dedicated reconciler suite exercises
+// JSON-RPC; a merchant header alone never changes this fixture's nonce state.
+const chainUsed = vi.hoisted(() => new Set<string>());
+vi.mock('viem', async (original) => ({
+  ...(await original<typeof import('viem')>()),
+  createPublicClient: () => ({
+    getChainId: async () => 84532,
+    getBlock: async ({ blockNumber }: { blockNumber?: bigint }) => ({
+      number: blockNumber ?? 50000n,
+      timestamp:
+        BigInt(Math.floor(systemClock.now() / 1000)) -
+        (blockNumber === undefined ? 0n : 50000n - blockNumber),
+    }),
+    readContract: async ({ args }: { args: [string, string] }) => chainUsed.has(args[1]),
+    getLogs: async () => [{ transactionHash: TX }],
+  }),
+}));
 
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYEE = '0x0d972d44bda2bc27420debd711395729480186ae';
@@ -31,7 +49,10 @@ async function listen(
 ): Promise<string> {
   const server = createServer(handler);
   servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
@@ -90,6 +111,8 @@ async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: 
     });
 
     const outcome = outcomes[paid.length - 1] ?? 'settle';
+    if (['settle', 'settle_slowly', 'drop_after_settle'].includes(outcome))
+      chainUsed.add(authorization.nonce);
     if (outcome === 'settle_slowly') await new Promise((r) => setTimeout(r, 100)); // keeps the request in flight
     switch (outcome === 'settle_slowly' ? 'settle' : outcome) {
       case 'drop_after_settle':
@@ -310,11 +333,7 @@ test('(e) store refuses settlement (row already FAILED): pay must not report SET
   await assert.rejects(payments.pay(paymentId, quote), (err: unknown) => {
     assert.ok(err instanceof Error);
     assert.match(err.message, /FAILED/);
-    assert.equal(
-      (err as { txHash?: string }).txHash,
-      TX,
-      'the error carries the tx hash so it can be reconciled by hand',
-    );
+    assert.equal((err as { txHash?: string }).txHash, TX);
     return true;
   });
   assert.equal(

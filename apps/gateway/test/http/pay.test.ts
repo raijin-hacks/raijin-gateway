@@ -18,6 +18,7 @@ import {
   createStubJudge,
   JudgeError,
 } from '../../src/judge/index.js';
+import { getQuote as realGetQuote } from '../../src/payments/quote.js';
 import { createPaymentStore } from '../../src/db/payment-store.js';
 import { createMockPayments } from '../../src/mock-payments.js';
 import { createPipeline } from '../../src/pipeline/index.js';
@@ -163,6 +164,47 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     expect(h.pipeline.replay(first.body.decision_id).status).toBe('pending');
     expect(h.payments.getQuote).not.toHaveBeenCalled();
     expect(h.payments.pay).not.toHaveBeenCalled();
+  });
+
+  it('rejects an over-cap real quote before reserving funds or invoking the judge', async () => {
+    const judge = createStubJudge('stub-approve');
+    const judged = vi.spyOn(judge, 'judge');
+    const h = await fixture(judge);
+    h.payments.getQuote.mockImplementation(realGetQuote);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 402,
+            headers: {
+              'PAYMENT-REQUIRED': Buffer.from(
+                JSON.stringify({
+                  accepts: [
+                    {
+                      scheme: 'exact',
+                      network: 'eip155:84532',
+                      asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+                      amount: '10000',
+                      payTo: h.deps.catalog.merchants[0]!.payee,
+                      maxTimeoutSeconds: 301,
+                    },
+                  ],
+                }),
+              ).toString('base64'),
+            },
+          }),
+      ),
+    );
+    try {
+      expect((await h.pay()).body).toMatchObject({ status: 'denied', reasons: ['QUOTE_INVALID'] });
+      expect(h.count('payments')).toBe(0);
+      expect(h.money()).toEqual({ spent: 0, reserved: 0 });
+      expect(judged).not.toHaveBeenCalled();
+      expect(h.payments.pay).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('signs only after a committed approval; replay is exact and does not update trust twice', async () => {

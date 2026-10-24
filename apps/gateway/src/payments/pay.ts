@@ -4,15 +4,18 @@
 import { x402Client, x402HTTPClient } from '@x402/core/client';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { privateKeyToAccount } from 'viem/accounts';
-import { NETWORK, usdcAddress } from './quote.js';
+import { MAX_AUTHORIZATION_SECONDS, NETWORK, usdcAddress, validateTimeout } from './quote.js';
+import type { createReconcile, SettlementReceipt } from './reconcile.js';
+import { readCappedBody } from './response-body.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore, Quote } from '@apf/contracts';
 
 const PAID_REQUEST_TIMEOUT_MS = 15_000;
+export const MAX_PAID_BODY_BYTES = 1024 * 1024;
 
 type PayResult = Awaited<ReturnType<PaymentsModule['pay']>>;
 
-// The merchant proved settlement, but the store refused to record it. Needs a human: money moved that the books don't show.
+// The chain proved settlement, but the store refused to record it. Needs a human: money moved that the books don't show.
 export class SettlementNotRecordedError extends Error {
   paymentId: string;
   txHash: string;
@@ -28,7 +31,12 @@ export class SettlementNotRecordedError extends Error {
   }
 }
 
-export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, clock: Clock) {
+export function createPay(
+  store: PaymentStore,
+  walletPrivateKey: `0x${string}`,
+  clock: Clock,
+  reconcile: ReturnType<typeof createReconcile>,
+) {
   const client = new x402Client().register(
     'eip155:*',
     new ExactEvmScheme(privateKeyToAccount(walletPrivateKey)),
@@ -93,6 +101,15 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
       throw new Error(`payment ${paymentId} is ${row.state} but has no stored authorization`);
     }
 
+    // Recheck stored authorizations too: recovery/retries must not send an unbounded payload.
+    const storedAuthorization = JSON.parse(authorizationJson).payload?.authorization;
+    validateTimeout((quote.raw as Record<string, unknown>)?.maxTimeoutSeconds);
+    signedExpiry(
+      storedAuthorization,
+      (quote.raw as { maxTimeoutSeconds: number }).maxTimeoutSeconds,
+      true,
+    );
+
     // 3. Record the submission before the paid request goes out. A retry (SUBMITTED or UNKNOWN) is already past this.
     // Invariant the reconciler relies on: nothing is ever sent while the row is SIGNED. reconcile() fails SIGNED rows
     // without asking the chain, so any path that sends before markSubmitted succeeds could release a cashable payment.
@@ -138,40 +155,52 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
         redirect: 'manual',
         signal: AbortSignal.timeout(PAID_REQUEST_TIMEOUT_MS),
       });
-      body = await res.text();
+      body = await readCappedBody(res, MAX_PAID_BODY_BYTES);
     } catch (err) {
       // Timeout or dropped connection: the merchant may have settled anyway.
       console.warn(`[payments] ${paymentId} UNKNOWN: paid request failed: ${describe(err)}`);
       return markUnknown(paymentId);
     }
 
-    // 5. Only a 2xx carrying a successful settlement with a tx hash proves payment.
-    const txHash = settledTxHash(http, res);
-    if (res.status >= 200 && res.status < 300 && txHash) {
-      if (!(await store.settle(paymentId, txHash))) {
-        // The conditional update changed nothing. Already SETTLED (e.g. by the reconciler) is fine: it is counted once.
-        const now = await store.get(paymentId);
-        if (now?.state !== 'SETTLED') {
-          // Paid on-chain, but the books say otherwise (e.g. FAILED, reservation released). Never report SETTLED here.
-          const err = new SettlementNotRecordedError(paymentId, txHash, now?.state ?? 'missing');
+    // The merchant controls every header. A successful HTTP response is only a reason to
+    // ask the chain; it is never settlement evidence, even if it names a real transaction.
+    if (res.status >= 200 && res.status < 300) {
+      const receipt: SettlementReceipt = {};
+      try {
+        const state = await reconcile(paymentId, receipt);
+        if (state === 'SETTLED' && (await store.get(paymentId))?.state === 'SETTLED') {
+          return {
+            state: 'SETTLED',
+            txHash: receipt.txHash ?? 'unknown',
+            response: {
+              status_code: res.status,
+              content_type: res.headers.get('content-type') ?? '',
+              body,
+            },
+          };
+        }
+        if (receipt.txHash) {
+          const current = await store.get(paymentId);
+          throw new SettlementNotRecordedError(
+            paymentId,
+            receipt.txHash,
+            current?.state ?? 'missing',
+          );
+        }
+        if (state === 'FAILED') return { state: 'FAILED', reason: 'resolved by the chain' };
+      } catch (err) {
+        if (err instanceof SettlementNotRecordedError) {
           console.error(`[payments] ${err.message}`);
           throw err;
         }
+        if (receipt.txHash) {
+          // The RPC proved use but recording threw (e.g. a database write error).
+          console.error(`[payments] ${paymentId}: chain settlement not recorded: ${describe(err)}`);
+          throw err;
+        }
+        console.warn(`[payments] ${paymentId}: chain verification failed: ${describe(err)}`);
       }
-      return {
-        state: 'SETTLED',
-        txHash,
-        response: {
-          status_code: res.status,
-          content_type: res.headers.get('content-type') ?? '',
-          body,
-        },
-      };
     }
-
-    console.warn(
-      `[payments] ${paymentId} UNKNOWN: merchant answered ${res.status}${txHash ? '' : ' without a settlement tx hash'}`,
-    );
     return markUnknown(paymentId);
   }
 
@@ -188,6 +217,8 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
 
   async function sign(quote: Quote, reserved: { amount: number; payee: string }): Promise<string> {
     const raw = quote.raw as Record<string, unknown>;
+    const timeout = raw?.maxTimeoutSeconds;
+    validateTimeout(timeout);
     // The requirements must describe exactly the approved payment: exact scheme, Base Sepolia USDC, amount, payee.
     if (
       raw.scheme !== 'exact' ||
@@ -209,8 +240,9 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
     } as Parameters<typeof client.createPaymentPayload>[0]);
 
     // Check what was actually signed against the reservation itself, before it is stored.
-    const authorization = (payload.payload as { authorization?: { value?: string; to?: string } })
-      .authorization;
+    const authorization = (
+      payload.payload as { authorization?: { value?: string; to?: string; validBefore?: string } }
+    ).authorization;
     if (
       authorization?.value !== String(reserved.amount) ||
       authorization.to?.toLowerCase() !== reserved.payee.toLowerCase()
@@ -219,20 +251,27 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
         'signed authorization does not match the reservation; refusing to store or send',
       );
     }
+    signedExpiry(authorization, timeout);
     return JSON.stringify(payload);
   }
-}
-
-function settledTxHash(http: x402HTTPClient, res: Response): string | null {
-  let settle: { success?: boolean; transaction?: string };
-  try {
-    settle = http.getPaymentSettleResponse((name) => res.headers.get(name));
-  } catch (err) {
-    // Missing or undecodable header: no proof of settlement, so the caller marks UNKNOWN.
-    console.warn(`[payments] no usable settlement header: ${describe(err)}`);
-    return null;
+  function signedExpiry(
+    authorization: { validBefore?: unknown } | undefined,
+    timeout: number,
+    allowExpired = false,
+  ): void {
+    const value = authorization?.validBefore;
+    const seconds = typeof value === 'string' && /^[1-9]\d*$/.test(value) ? Number(value) : NaN;
+    const now = Math.floor(clock.now() / 1000);
+    if (
+      !Number.isSafeInteger(seconds * 1000) ||
+      seconds > now + Math.min(timeout, MAX_AUTHORIZATION_SECONDS) ||
+      (!allowExpired && seconds <= now)
+    ) {
+      throw new Error(
+        'signed validBefore exceeds the authorization lifetime or is invalid; refusing to store or send',
+      );
+    }
   }
-  return settle.success && settle.transaction ? settle.transaction : null;
 }
 
 function describe(err: unknown): string {
