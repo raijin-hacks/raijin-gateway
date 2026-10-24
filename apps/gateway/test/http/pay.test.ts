@@ -1314,3 +1314,103 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     ).toEqual({ spent: 2000000, reserved: 0 });
   });
 });
+
+// Chunk 3 integrated challenge: real handlers, deterministic barriers, durable accounting.
+describe('integrated continuation/concurrency challenge', () => {
+  it.each(['closed', 'expired-review'] as const)(
+    'cannot resume a human hold after %s and cannot reuse its stale approval',
+    async (change) => {
+      const h = await fixture(createStubJudge('stub-escalate'));
+      const first = await h.pay();
+      expect(first.body.status).toBe('pending');
+      expect(h.money()).toEqual({ spent: 0, reserved: 10000 });
+      if (change === 'closed') await h.closeMandate(h.mandate.mandate_id);
+      if (change === 'expired-review') h.clock.advance(600001);
+      await h.review(first.body.decision_id);
+      // Admin polling still works after the worker token is revoked by close.
+      const polled = await h.request(`/decisions/${first.body.decision_id}`, ADMIN_TOKEN);
+      expect(PayResponseSchema.parse(await polled.json()).status).toBe('denied');
+      expect((await h.review(first.body.decision_id)).status).toBe(409);
+      expect(h.payments.pay).not.toHaveBeenCalled();
+      expect(h.money()).toEqual({ spent: 0, reserved: 0 });
+    },
+  );
+
+  it.each([true, false])(
+    'serializes concurrent purchases (same key=%s) while judge is suspended',
+    async (sameKey) => {
+      const entered = deferred<void>();
+      const release = deferred<unknown>();
+      let calls = 0;
+      const h = await fixture(
+        createInjectedJudge({
+          judge: async () => {
+            calls++;
+            entered.resolve();
+            return release.promise;
+          },
+        }),
+      );
+      h.db.sqlite
+        .prepare('UPDATE mandates SET budget = 10000 WHERE id = ?')
+        .run(h.mandate.mandate_id);
+      const purchase = h.purchase();
+      const first = h.pay(purchase);
+      await entered.promise;
+      const second = await h.pay(sameKey ? purchase : h.purchase());
+      expect(second.body.status).toBe(sameKey ? 'pending' : 'denied');
+      expect(h.money()).toEqual({ spent: 0, reserved: 10000 });
+      expect(h.payments.pay).not.toHaveBeenCalled();
+      release.resolve({
+        decision: 'approve',
+        reasons: ['JUDGE_APPROVED'],
+        explanation: '',
+        injection_suspected: false,
+      });
+      expect((await first).body.status).toBe('approved');
+      expect(calls).toBe(1);
+      expect(h.payments.pay).toHaveBeenCalledTimes(1);
+      expect(h.money()).toEqual({ spent: 10000, reserved: 0 });
+      expect((await h.pay(purchase)).body.status).toBe('approved');
+      expect(h.payments.pay).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
+it('preserves a reserved liability when budget is reduced during human review', async () => {
+  const h = await fixture(createStubJudge('stub-escalate'));
+  const first = await h.pay();
+  expect(first.body.status).toBe('pending');
+  expect(() =>
+    h.db.sqlite.prepare('UPDATE mandates SET budget = 9999 WHERE id = ?').run(h.mandate.mandate_id),
+  ).toThrow('mandates_money');
+  h.db.sqlite.prepare('UPDATE mandates SET budget = 10000 WHERE id = ?').run(h.mandate.mandate_id);
+  expect((await h.review(first.body.decision_id)).status).toBe(200);
+  expect(h.money()).toEqual({ spent: 10000, reserved: 0 });
+  expect((await h.pay()).body.status).toBe('denied');
+  expect((await h.review(first.body.decision_id)).status).toBe(409);
+  expect(h.payments.pay).toHaveBeenCalledTimes(1);
+});
+
+it.fails(
+  'expired approvals must disappear on queue refresh without a worker poll (Chunk 2: routes/operators.ts does not sweep)',
+  async () => {
+    const h = await fixture(createStubJudge('stub-escalate'));
+    expect((await h.pay()).body.status).toBe('pending');
+    h.clock.advance(600001);
+    const queue = await h.request('/approvals?status=pending', ADMIN_TOKEN);
+    expect(await queue.json()).toEqual([]);
+  },
+);
+
+it('claims a human approval only once under concurrent admin submissions', async () => {
+  const h = await fixture(createStubJudge('stub-escalate'));
+  const first = await h.pay();
+  const reviews = await Promise.all([
+    h.review(first.body.decision_id),
+    h.review(first.body.decision_id),
+  ]);
+  expect(reviews.map((r) => r.status).sort()).toEqual([200, 409]);
+  expect(h.payments.pay).toHaveBeenCalledTimes(1);
+  expect(h.money()).toEqual({ spent: 10000, reserved: 0 });
+});

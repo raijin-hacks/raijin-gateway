@@ -1,0 +1,128 @@
+{
+  "head": "8eddecaa38a40f4c1b4c5ac039f0c30e03cbe70d",
+  "source_sha256": "bd59f8db75f0d5f3e36f75b6803d8259c795b6eb830111b3119269a2241455ff",
+  "dirty": true,
+  "timestamp": "2026-10-24T20:39:13.739Z",
+  "mode": "OFFLINE STUB: NOT EVIDENCE of Claude quality or human setup time",
+  "model": null,
+  "operator": null,
+  "reverse_order": false,
+  "activation": "not attempted; contract cannot express strict operation plans",
+  "task_execution": "unmeasured",
+  "token_usage": null,
+  "cost": null,
+  "rows": [
+    {
+      "task_id": "pricing",
+      "manual_plan": {
+        "task": "Buy current Acme pricing from PriceScope only. Subjects: Acme. Total budget: 100000 atomic USDC. Expiry: 1800000 milliseconds.",
+        "subjects": [
+          "Acme"
+        ],
+        "allowed_merchant_ids": [
+          "mer_pricing"
+        ],
+        "budget": 100000,
+        "expires_in_ms": 1800000
+      },
+      "proposal": {
+        "draft": null,
+        "unresolved": [
+          "Endpoint restrictions, option values and per-payment caps cannot be stored in the current mandate contract.",
+          "Offline stub: human must supply and review all mandate fields."
+        ]
+      },
+      "error": null,
+      "latency_ms": 0.8413749999999709,
+      "reference_differences": [
+        "task",
+        "subjects",
+        "allowed_merchant_ids",
+        "budget",
+        "expires_in_ms"
+      ],
+      "draft_failed": true,
+      "manual_setup_ms": null,
+      "assisted_setup_ms": null,
+      "human_edits": null,
+      "activation_errors": null,
+      "task_failed": null
+    },
+    {
+      "task_id": "weather",
+      "manual_plan": {
+        "task": "Buy the Oakland forecast from SkyData only. Subjects: Oakland. Total budget: 200000 atomic USDC. Expiry: 900000 milliseconds.",
+        "subjects": [
+          "Oakland"
+        ],
+        "allowed_merchant_ids": [
+          "mer_weather"
+        ],
+        "budget": 200000,
+        "expires_in_ms": 900000
+      },
+      "proposal": {
+        "draft": null,
+        "unresolved": [
+          "Endpoint restrictions, option values and per-payment caps cannot be stored in the current mandate contract.",
+          "Offline stub: human must supply and review all mandate fields."
+        ]
+      },
+      "error": null,
+      "latency_ms": 0.23312500000002956,
+      "reference_differences": [
+        "task",
+        "subjects",
+        "allowed_merchant_ids",
+        "budget",
+        "expires_in_ms"
+      ],
+      "draft_failed": true,
+      "manual_setup_ms": null,
+      "assisted_setup_ms": null,
+      "human_edits": null,
+      "activation_errors": null,
+      "task_failed": null
+    },
+    {
+      "task_id": "history",
+      "manual_plan": {
+        "task": "Buy the full pricing export for all tracked companies from PriceScope only. Subjects: Acme, Globex, Initech, Umbrella, Hooli. Total budget: 1000000 atomic USDC. Expiry: 3600000 milliseconds.",
+        "subjects": [
+          "Acme",
+          "Globex",
+          "Initech",
+          "Umbrella",
+          "Hooli"
+        ],
+        "allowed_merchant_ids": [
+          "mer_pricing"
+        ],
+        "budget": 1000000,
+        "expires_in_ms": 3600000
+      },
+      "proposal": {
+        "draft": null,
+        "unresolved": [
+          "Endpoint restrictions, option values and per-payment caps cannot be stored in the current mandate contract.",
+          "Offline stub: human must supply and review all mandate fields."
+        ]
+      },
+      "error": null,
+      "latency_ms": 0.13333299999999326,
+      "reference_differences": [
+        "task",
+        "subjects",
+        "allowed_merchant_ids",
+        "budget",
+        "expires_in_ms"
+      ],
+      "draft_failed": true,
+      "manual_setup_ms": null,
+      "assisted_setup_ms": null,
+      "human_edits": null,
+      "activation_errors": null,
+      "task_failed": null
+    }
+  ]
+}
