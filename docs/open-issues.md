@@ -36,6 +36,8 @@ This is shared-password operator authentication, not named-user identity or a si
 
 The [supplemental v1.3-v1 protocol](../eval/supplemental/v1.3-v1/README.md) preserves the historical report and labels. Run `pnpm eval:v13:offline`, or export `ANTHROPIC_API_KEY` locally and run `pnpm eval:v13:live` for three repetitions with pinned `claude-sonnet-4-5-20250929`. Artifacts are isolated under `eval/supplemental/v1.3-v1/results/`.
 
+Chunk 4's held-out v2 set (`eval/cases/heldout-v2`, eight PriceScope pairs) is a separate frozen folder. Run `pnpm eval:heldout-v2:offline` / `pnpm eval:heldout-v2:live`. Live numbers are in [RESULTS.md](../eval/cases/heldout-v2/RESULTS.md). Labels are unreviewed. Do not tune the judge prompt on that set.
+
 The offline run has six matched task-relevance pairs and four deterministic boundary probes. The category baseline blocks the export attack but wrongly denies its legitimate history control; it allows five other off-task purchases. Stub-approve allows all six. All four boundary cases deny without judge calls or mock signing/settlement. These are authored direct requests through the real gateway with mock payments, not live model or worker-induction evidence. Judge-only catches must beat the stronger deterministic baseline, not just stub-approve.
 
 - [ ] Independent reviewer sign-off on the frozen manifest (currently pending); a separate adaptive outside challenge remains necessary.
