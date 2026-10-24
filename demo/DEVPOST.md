@@ -28,13 +28,16 @@ A gateway that sits between an agent and its money. A human creates a **mandate*
 
 A per-session trust score only ever tightens control. The judge never sees it. The dashboard shows every decision live, the approval queue and trust over time.
 
+**The signer is a second, independent check.** The gateway signs through a Coinbase CDP server account with a policy attached: only a Base Sepolia USDC `TransferWithAuthorization`, only to the merchant's payee, at most 0.01 USDC per signature, and every other signing route rejected. CDP independently rejects the prohibited signatures we demonstrate, including when we call the gateway's signer with its own checks skipped. The gateway's key can sign but can't edit or detach that policy. The policy only sees each signature, so the endpoint, the subjects and running totals stay the gateway's job.
+
 ## How we built it
 
 - **Gateway:** TypeScript, Hono, SQLite with Drizzle. Atomic SQL for reservations, settlement and grant use.
-- **Payments:** x402 (`@x402/core`, `@x402/fetch`, `@x402/evm`, `@x402/express`), viem, USDC on Base Sepolia through the x402.org facilitator. Includes a payment lifecycle and a reconciler, so a lost settlement response or a crash never overspends.
+- **Payments:** x402 (`@x402/core`, `@x402/fetch`, `@x402/evm`, `@x402/express`), viem, USDC on Base Sepolia through the public x402.org test facilitator (not CDP's facilitator). Includes a payment lifecycle and a reconciler, so a lost settlement response or a crash never overspends.
+- **Signer:** a Coinbase CDP server account (`@coinbase/cdp-sdk`) under an attached signing policy, with separate admin and runtime keys. The gateway never falls back to a local key if CDP refuses or times out.
 - **Judge:** Claude, temperature 0, pinned model, 5-second timeout, output validated with zod. Any error is a denial.
 - **Dashboard:** Next.js with server-sent events, and Recharts for the trust graph. The admin token stays on the server.
-- **Test merchants:** three honest x402 sellers and one attacker server with injected pages.
+- **Test merchants:** one honest x402 seller, PriceScope, serving synthetic price data on `http://localhost:4101` (a loopback exception in the gateway's destination rules, not HTTPS), and an attacker server on `localhost:4199` with injected pages. The attacker server isn't in the catalog, so the gateway never contacts it.
 - **Contracts first:** one shared types package, with the judge's input fixed by contract so that no code path can add attacker text to it.
 
 ## Evaluation
@@ -54,6 +57,14 @@ The judge was fooled [REPORT: K] times, and code bounded every one of them. The 
 
 Load test: [LOADTEST: N] synthetic requests at concurrency 50, [LOADTEST: req/s], [LOADTEST: judge-call rate], p50 [LOADTEST] / p95 [LOADTEST].
 
+### Payment evidence
+
+All on Base Sepolia, a test network whose USDC has no cash value:
+
+- **CDP probes,** run against the real CDP API with the gateway's runtime key: a 0.01 USDC transfer to the merchant is signed; a value one unit over, another payee, another contract, a `Permit` type, `signHash`, `signMessage`, and the gateway's own signer with its checks skipped asking for 0.50 USDC to an attacker all return `403 policy_violation`. Attempts by the runtime key to loosen or detach the policy return `403 Missing required scope`.
+- **CDP-signed settlement through the gateway:** [`0x87d139ba…36e6da`](https://base-sepolia.blockscout.com/tx/0x87d139ba2b14352fdfa5f9bd410a6eacfaa6eb0f872ba858d35b8fc26836e6da), purchased data delivered.
+- **Lost reply, then a restart:** the purchase came back `payment_unknown`, the reconciler found the settlement on chain ([`0xbd4d0566…64675`](https://base-sepolia.blockscout.com/tx/0xbd4d056668fc5f4120a716d16bde95acca62bdda72e4cc2903f952477cd64675)), and a retry with the same key after restarting the gateway returned the same payment, with no new payment created.
+
 ## Challenges we ran into
 
 - [Fill in from the team.] Candidates: getting the first x402 payment to settle, keeping attacker text out of the judge while still giving it enough to decide, and judge-only attacks that kept getting caught by the rules.
@@ -68,7 +79,9 @@ Load test: [LOADTEST: N] synthetic requests at concurrency 50, [LOADTEST: req/s]
 
 - **Data leaking through the agent's free requests.** A payment gateway can't see them. [Say whether the egress sandbox was built.]
 - A compromised gateway or admin, stolen keys, smart-contract bugs, chain-level attacks, and real money. Everything is testnet.
-- **The gateway holds keys,** which raises custody questions in a real product.
+- **Who still has to be trusted:** whoever holds the CDP admin key (it can change the signing policy), CDP itself, and the operator who writes the catalog.
+- **The CDP policy is per signature.** It checks payee, value, token and type. It doesn't know the HTTP endpoint, the subjects, the plan or cumulative totals.
+- **No HTTPS evidence.** The only merchant runs on loopback HTTP under an explicit exception.
 - **The trust score and its thresholds are a starting policy,** not a validated model.
 - **Before grants warm up, a judge call can cost more than the payment,** and settlement fees can exceed tiny prices at volume. Batching settlement is out of scope.
 
@@ -78,14 +91,14 @@ Policies set per tenant, the egress sandbox for deployed agents, batched settlem
 
 ## Tracks
 
-- [ ] Coinbase: x402
+- [ ] Coinbase: x402 payments, with a CDP server account and signing policy
 - [ ] Best Security Hack
 - [ ] Microsoft: only if hosting on Azure counts (see `SPONSOR-NOTES.md`)
 - [ ] Anthropic: if its track is open and rewards agent safety
 
 ## Built with
 
-typescript · node · hono · sqlite · drizzle · x402 · viem · base-sepolia · usdc · claude · next.js · recharts · zod
+typescript · node · hono · sqlite · drizzle · x402 · coinbase-cdp · viem · base-sepolia · usdc · claude · next.js · recharts · zod
 
 ## Links
 
