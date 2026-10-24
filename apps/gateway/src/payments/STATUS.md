@@ -37,6 +37,9 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - `apps/gateway/src/payments/scripts/pay-once.ts` (throwaway): `wrapFetchWithPayment` pays the URL (default `http://localhost:4101/v1/pricing/acme?period=30d`, or pass one as the first arg), then prints the body, the decoded `PAYMENT-RESPONSE` settlement, the tx hash and a basescan link. On a failed payment it prints the facilitator's reason. Run: `pnpm payments:pay-once`.
 - Checked: an unpaid request returns 402 with `accepts[0] = { scheme: exact, network: eip155:84532, amount: "10000", payTo: 0x0d97…86ae, maxTimeoutSeconds: 300 }`. Dry run with a random unfunded key: the client signs, the facilitator verifies, and the payment is rejected with `invalid_exact_evm_insufficient_balance`. The whole path works up to the balance check.
 
+**Milestone met:** first real payment settled on Base Sepolia: `0xbcf31d3f420dfd6006701912e015e935078a899bbd0f5bc0aeabedc0a41abb15` (block 49499677, 10000 atomic USDC, payer to PriceScope). https://sepolia.basescan.org/tx/0xbcf31d3f420dfd6006701912e015e935078a899bbd0f5bc0aeabedc0a41abb15
+- Payer funded with 20 USDC from faucet.circle.com (Base Sepolia).
+- The first attempts failed at settlement with `invalid_exact_evm_transaction_failed` / "replacement transaction underpriced". That was a nonce collision on the shared x402.org facilitator's gas wallet, not our code; a retry settled. `pay-once` now prints the `PAYMENT-RESPONSE` failure reason. P4's "anything else is UNKNOWN, never FAILED" rule covers exactly this case.
+
 **Open**
-- Not done yet: a real settled tx. It needs the payer funded with at least 0.01 test USDC, then `pnpm merchants:pricescope` and `pnpm payments:pay-once`, and the tx posted in chat.
 - The x402 route pattern `GET /v1/pricing/:company` also matches `/v1/pricing/export`, but only for GET. When P6 adds `POST /v1/pricing/export`, give it its own route entry.

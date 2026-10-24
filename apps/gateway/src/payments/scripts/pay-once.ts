@@ -24,6 +24,9 @@ if (!res.ok) {
   // A 402 after paying carries the rejection reason (e.g. insufficient_funds) in PAYMENT-REQUIRED.
   const required = res.headers.get('PAYMENT-REQUIRED');
   if (required) console.error(`rejected: ${JSON.parse(Buffer.from(required, 'base64').toString()).error}`);
+  // A 402 after verify passed means settlement failed; the reason is in PAYMENT-RESPONSE.
+  const settleHeader = res.headers.get('PAYMENT-RESPONSE');
+  if (settleHeader) console.error(`settlement failed: ${Buffer.from(settleHeader, 'base64').toString()}`);
   process.exit(1);
 }
 
