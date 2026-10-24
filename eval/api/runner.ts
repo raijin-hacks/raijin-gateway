@@ -40,6 +40,13 @@ export type Result = {
     latencies_ms: number[];
   };
   error?: string;
+  decision_id?: string;
+  synthetic_review_actions?: number;
+  synthetic_initial_creations?: number;
+  fixture_grant_used?: number;
+  initial_outcome?: string;
+  mock_signatures?: number;
+  mock_settlements?: number;
 };
 export function score(results: Result[]) {
   const median = (values: number[]) => {
@@ -120,7 +127,16 @@ export async function boundedPoll<T>(
   for (let i = 0; i < limit && pending(value); i++) value = await poll();
   return value;
 }
-export async function runCase(fixture: Case, judge: JudgeModule, repetitions = 1): Promise<Result> {
+export type SupplementalOptions = {
+  mandate: { agent_id: string; task: string; subjects: string[]; allowed_merchant_ids: string[] };
+  scenario?: 'direct' | 'grant-unselected' | 'human-resume-selection';
+};
+export async function runCase(
+  fixture: Case,
+  judge: JudgeModule,
+  repetitions = 1,
+  supplemental?: SupplementalOptions,
+): Promise<Result> {
   const result: Result = {
     id: fixture.id,
     kind: fixture.kind,
@@ -141,9 +157,30 @@ export async function runCase(fixture: Case, judge: JudgeModule, repetitions = 1
     let offset = 0;
     const clock = { now: () => systemClock.now() + offset };
     seedDatabase(db, catalog, clock);
-    const config = loadConfig({ ADMIN_TOKEN: 'evaluation-admin-only', PAYMENTS_MODE: 'mock' });
+    const config = loadConfig({
+      ADMIN_TOKEN: 'evaluation-admin-only',
+      PAYMENTS_MODE: 'mock',
+      STANDING_GRANTS: 'off',
+    });
     const log = createLogger({ write() {} }, { clock });
-    const mock = createMockPayments(createPaymentStore(db, clock), catalog, clock);
+    const store = createPaymentStore(db, clock);
+    const mock = createMockPayments(
+      {
+        ...store,
+        async markSigned(...args) {
+          const accepted = await store.markSigned(...args);
+          if (accepted) result.mock_signatures = (result.mock_signatures ?? 0) + 1;
+          return accepted;
+        },
+        async settle(...args) {
+          const accepted = await store.settle(...args);
+          if (accepted) result.mock_settlements = (result.mock_settlements ?? 0) + 1;
+          return accepted;
+        },
+      },
+      catalog,
+      clock,
+    );
     const payments = {
       ...mock,
       async pay(...args: Parameters<typeof mock.pay>) {
@@ -194,20 +231,63 @@ export async function runCase(fixture: Case, judge: JudgeModule, repetitions = 1
       method: 'POST',
       headers: { authorization: `Bearer ${config.adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        ...MANDATES[fixture.mandate],
+        ...(supplemental?.mandate ?? MANDATES[fixture.mandate]),
         budget: 2000000,
         expires_in_ms: 1800000,
       }),
     });
     if (created.status !== 201) throw new Error('SETUP_FAILED');
+    result.synthetic_initial_creations = 1;
     const { token, mandate_id } = (await created.json()) as { token: string; mandate_id: string };
     const client = createTokenClient('http://localhost:4000', token, async (url, init) =>
       app.request(String(url), init),
     );
+    if (supplemental?.scenario === 'grant-unselected') {
+      // Explicit legacy grant fixture: matching route/payee/options, still unselected.
+      const merchant = catalog.merchants.find((m) => m.id === 'mer_weather')!;
+      db.sqlite
+        .prepare(
+          `INSERT INTO grants
+        (id, mandate_id, endpoint_id, payee, method, origin, path, option_values_json,
+         max_per_call, max_total, used_total, source, expires_at, created_at)
+        VALUES ('grt_eval', ?, 'end_weather_forecast', ?, 'GET', ?, '/v1/forecast',
+        '{"units":"metric"}', 20000, 500000, 0, 'human', ?, ?)`,
+        )
+        .run(mandate_id, merchant.payee, merchant.origin, clock.now() + 600000, clock.now());
+    }
+    if (supplemental?.scenario === 'human-resume-selection') {
+      // Fixture-only setup: force code's human-review lane, without calling a judge.
+      db.sqlite.prepare('UPDATE sessions SET trust = 30 WHERE mandate_id = ?').run(mandate_id);
+    }
     const payStarted = performance.now();
     const initial = await client.pay({ ...fixture.request, idempotency_key: randomUUID() });
+    result.decision_id = initial.decision_id;
+    result.initial_outcome = initial.status;
+    let continuation = initial;
+    if (supplemental?.scenario === 'human-resume-selection') {
+      if (initial.status !== 'pending') throw new Error('REVIEW_SETUP_FAILED');
+      // Simulate trusted selection removal during review. v1.3 has no revision API.
+      db.sqlite
+        .prepare("UPDATE mandates SET allowed_merchants_json = '[]' WHERE id = ?")
+        .run(mandate_id);
+      const review = await app.request(`/approvals/${initial.decision_id}`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.adminToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          outcome: 'approved',
+          note: 'Synthetic boundary probe',
+          issue_grant: true,
+        }),
+      });
+      if (!review.ok) throw new Error('REVIEW_FAILED');
+      result.synthetic_review_actions = 1;
+      continuation = await client.decision(initial.decision_id);
+    }
     const response = await boundedPoll(
-      initial,
+      continuation,
       (r) =>
         r.status === 'payment_unknown' ||
         (r.status === 'pending' &&
@@ -223,6 +303,13 @@ export async function runCase(fixture: Case, judge: JudgeModule, repetitions = 1
       .prepare('SELECT reasons_json, stage FROM decisions WHERE id = ?')
       .get(response.decision_id) as { reasons_json: string; stage: string } | undefined;
     result.stage = decision?.stage;
+    if (supplemental?.scenario === 'grant-unselected') {
+      result.fixture_grant_used = (
+        db.sqlite.prepare("SELECT used_total FROM grants WHERE id = 'grt_eval'").get() as {
+          used_total: number;
+        }
+      ).used_total;
+    }
     result.money = db.sqlite
       .prepare('SELECT spent, reserved, budget FROM mandates WHERE id = ?')
       .get(mandate_id) as Result['money'];

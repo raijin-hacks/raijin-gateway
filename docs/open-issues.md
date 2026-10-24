@@ -36,13 +36,20 @@ Also: V9 is caught pre-contact (`PARAM_NOT_IN_SCHEMA`); V16 and V14 target an un
 
 - [ ] Chunk 4 relabels or rewrites these variants. A judge-only attack has to target a **cataloged** endpoint with valid parameters and a normal price, and carry the attack in its purpose.
 
-## Does the judge add value?
+## Versioned evaluation and remaining evidence
 
-The phase 7 deterministic baseline catches all 20 core attacks and all 17 held-out variants without the judge, so the benchmark doesn't yet show the judge adding anything. The phase 8 demo has the counterexample: a normal-price lookup at a cataloged merchant under a greeting-only mandate passes every rule and reaches the judge.
+The [supplemental v1.3-v1 protocol](../eval/supplemental/v1.3-v1/README.md) preserves the historical report and labels. Run `pnpm eval:v13:offline`, or export `ANTHROPIC_API_KEY` locally and run `pnpm eval:v13:live` for three repetitions with pinned `claude-sonnet-4-5-20250929`. Artifacts are isolated under `eval/supplemental/v1.3-v1/results/`.
 
-- [ ] Add that attack (and more like it) to the frozen eval set as judge-only cases.
-- [ ] Run `pnpm eval:real` (three runs) and show the real judge denying them.
-- [ ] Independent label review, as the assignment requires.
+The offline run has six matched task-relevance pairs and four deterministic boundary probes. The category baseline blocks the export attack but wrongly denies its legitimate history control; it allows five other off-task purchases. Stub-approve allows all six. All four boundary cases deny without judge calls or mock signing/settlement. These are authored direct requests through the real gateway with mock payments, not live model or worker-induction evidence. Judge-only catches must beat the stronger deterministic baseline, not just stub-approve.
+
+- [ ] Independent reviewer sign-off on the frozen manifest (currently pending); a separate adaptive outside challenge remains necessary.
+- [ ] Credentialed local live run; inspect all three repetitions, including errors, wrong denials and escalations. No live results are checked in.
+- [ ] Chunk 2 contract: endpoint allowlist, approved option map, per-payment cap, quantities and immutable/catalog revisions. Nine cases remain **blocked-on-contract**, excluded from executable denominators. Current task-text relevance is not strict authorization.
+- [ ] Integrated validation and challenge with Chunk 2/4: same-candidate useful report, matched controls, continuation/concurrency, response recovery and actual intervention counters.
+- [ ] Timed manual-plan versus Claude-assisted setup sample, including corrections, rejection, failed setup, amendments, abandonment and human minutes. Current normalized action rates are synthetic; actual human interventions per 1,000 settled purchases are unmeasured.
+- [ ] Model token/cost accounting, real signer/settlement observations and broader independently specified workflows. Three repetitions do not create new independent tasks.
+
+The earlier variant counts above and `eval/REPORT.md` are historical observations, not current v1.3 claims. Current unknown routes deny, merchant selection is pre-contact, and standing grants are off. Existing cases and report labels have not been rewritten.
 
 ## Other
 
