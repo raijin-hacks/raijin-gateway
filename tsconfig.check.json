@@ -14,5 +14,10 @@
     "skipLibCheck": true,
     "paths": { "@apf/contracts": ["./packages/contracts/src/index.ts"] }
   },
-  "include": ["eval/**/*.ts", "packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"]
+  "include": [
+    "eval/**/*.ts",
+    "packages/*/src/**/*.test.ts",
+    "apps/*/src/**/*.test.ts",
+    "apps/*/src/**/*.d.ts"
+  ]
 }
