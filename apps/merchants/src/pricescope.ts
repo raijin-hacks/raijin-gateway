@@ -158,13 +158,18 @@ function interceptDroppedSettlement(res: Response, state: PriceScopeState): void
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const port = Number(process.env.PRICESCOPE_PORT || DEFAULT_PORT);
   const app = createPriceScopeApp();
+  // The catalog names http://localhost:4101, and the gateway pins whichever loopback address
+  // `localhost` resolves to first (often ::1). Serve both loopback addresses, nothing else.
+  app
+    .listen(port, '::1')
+    .on('error', (err) => console.warn(`PriceScope: no IPv6 loopback (${err.message})`));
   app.listen(port, '127.0.0.1', () => {
     const payees = JSON.parse(readFileSync(new URL('../payees.json', import.meta.url), 'utf8')) as {
       payees: { pricescope: string };
     };
     const facilitatorUrl = process.env.FACILITATOR_URL || DEFAULT_FACILITATOR_URL;
     console.log(
-      `PriceScope on http://127.0.0.1:${port} (payTo ${payees.payees.pricescope}, facilitator ${facilitatorUrl})`,
+      `PriceScope on http://localhost:${port} (127.0.0.1 and ::1) (payTo ${payees.payees.pricescope}, facilitator ${facilitatorUrl})`,
     );
   });
 }
