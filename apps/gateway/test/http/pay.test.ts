@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   PayResponseSchema,
   type JudgeModule,
+  type JudgeOutput,
   type PayRequest,
   type PayResponse,
   type Quote,
@@ -21,7 +22,7 @@ import { createPaymentStore } from '../../src/db/payment-store.js';
 import { createMockPayments } from '../../src/mock-payments.js';
 import { createPipeline } from '../../src/pipeline/index.js';
 import { createHarness, ADMIN_TOKEN } from '../harness/app.js';
-import { FIXTURE_CATALOG_PATH } from '../harness/db.js';
+import { createDecision, FIXTURE_CATALOG_PATH } from '../harness/db.js';
 
 const url = 'http://localhost:4101/v1/pricing/acme?period=30d';
 function deferred<T>() {
@@ -287,6 +288,136 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     expect(spy).toHaveBeenCalledTimes(score >= 40 ? 1 : 0);
     expect(h.payments.pay).toHaveBeenCalledTimes(score >= 40 ? 1 : 0);
     expect(h.money().reserved).toBe(score >= 20 && score < 40 ? 10000 : 0);
+  });
+
+  it.each(['tier0', 'off-task'] as const)(
+    'requires human review when a concurrent %s denial lowers trust while the judge is pending',
+    async (cause) => {
+      const started = deferred<void>();
+      const waiting = deferred<unknown>();
+      const judge = createInjectedJudge({
+        judge: async () => {
+          started.resolve();
+          return waiting.promise;
+        },
+      });
+      const h = await fixture(judge);
+      h.db.sqlite.prepare('UPDATE sessions SET trust = 40 WHERE id = ?').run(h.mandate.session_id);
+      const pending = h.pay();
+      await started.promise;
+      if (cause === 'tier0') {
+        expect((await h.pay(h.purchase({ expected_price: 1 }))).body).toMatchObject({
+          status: 'denied',
+          reasons: ['PRICE_MISMATCH'],
+        });
+      } else {
+        // A separate endpoint has its own renewal lock and can judge concurrently.
+        vi.spyOn(judge, 'judge').mockResolvedValueOnce({
+          decision: 'deny',
+          reasons: ['JUDGE_OFF_TASK'],
+          explanation: '',
+          injection_suspected: false,
+        });
+        expect(
+          (
+            await h.pay(
+              h.purchase({
+                url: 'http://localhost:4101/v1/pricing/export',
+                method: 'POST',
+              }),
+            )
+          ).body,
+        ).toMatchObject({ status: 'denied', reasons: ['JUDGE_OFF_TASK'] });
+      }
+      expect(
+        h.db.sqlite.prepare('SELECT trust FROM sessions WHERE id = ?').get(h.mandate.session_id),
+      ).toEqual({ trust: cause === 'tier0' ? 35 : 25 });
+      waiting.resolve({
+        decision: 'approve',
+        reasons: ['JUDGE_APPROVED'],
+        explanation: '',
+        injection_suspected: false,
+        grant: { max_per_call: 10000, max_total: 10000, ttl_ms: 60000 },
+      });
+      const result = await pending;
+      expect(result.body.status).toBe('pending');
+      expect(
+        h.db.sqlite
+          .prepare('SELECT stage, reasons_json FROM decisions WHERE id = ?')
+          .get(result.body.decision_id),
+      ).toEqual({ stage: 'human', reasons_json: '["TRUST_REQUIRES_HUMAN"]' });
+      expect(h.payments.pay).not.toHaveBeenCalled();
+      expect(h.count('grants')).toBe(0);
+      expect(h.money()).toEqual({ spent: 0, reserved: 10000 });
+      expect((await h.review(result.body.decision_id)).status).toBe(200);
+      expect(h.pipeline.replay(result.body.decision_id).status).toBe('approved');
+      expect(h.payments.pay).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('atomically caps concurrent approvals for distinct new payees and permits explicit review', async () => {
+    const waiting = deferred<JudgeOutput>();
+    const started = deferred<void>();
+    let calls = 0;
+    const h = await fixture(
+      createInjectedJudge({
+        judge: async () => {
+          if (++calls === 3) started.resolve();
+          return waiting.promise;
+        },
+      }),
+    );
+    h.db.sqlite.prepare('UPDATE sessions SET trust = 50 WHERE id = ?').run(h.mandate.session_id);
+    h.db.sqlite
+      .prepare('UPDATE mandates SET allowed_merchants_json = ? WHERE id = ?')
+      .run(JSON.stringify(['mer_pricing', 'mer_weather', 'mer_news']), h.mandate.mandate_id);
+    // Two approved payees precede three overlapping judge calls, all of which see room initially.
+    for (const payee of [
+      '0x4444444444444444444444444444444444444444',
+      '0x5555555555555555555555555555555555555555',
+    ]) {
+      const id = createDecision(h.db, h.clock, {
+        mandateId: h.mandate.mandate_id,
+        sessionId: h.mandate.session_id,
+      });
+      h.db.sqlite
+        .prepare(
+          "UPDATE decisions SET stage = 'judge', outcome = 'approved', payee = ? WHERE id = ?",
+        )
+        .run(payee, id);
+    }
+    const pending = [
+      url,
+      'http://localhost:4102/v1/forecast?city=acme&units=metric',
+      'http://localhost:4103/v1/headlines?topic=acme',
+    ].map((target) => h.pay(h.purchase({ url: target })));
+    await started.promise;
+    expect(h.money().reserved).toBe(30000);
+    waiting.resolve({
+      decision: 'approve',
+      reasons: ['JUDGE_APPROVED'],
+      explanation: '',
+      injection_suspected: false,
+    });
+    const results = await Promise.all(pending);
+    expect(results.map((result) => result.body.status).sort()).toEqual([
+      'approved',
+      'pending',
+      'pending',
+    ]);
+    expect(h.payments.pay).toHaveBeenCalledTimes(1);
+    expect(h.money()).toEqual({ spent: 10000, reserved: 20000 });
+    for (const result of results.filter((result) => result.body.status === 'pending')) {
+      expect(
+        h.db.sqlite
+          .prepare('SELECT reasons_json FROM decisions WHERE id = ?')
+          .get(result.body.decision_id),
+      ).toEqual({ reasons_json: '["NEW_PAYEE_LIMIT"]' });
+      expect((await h.review(result.body.decision_id)).status).toBe(200);
+      expect(h.pipeline.replay(result.body.decision_id).status).toBe('approved');
+    }
+    expect(h.payments.pay).toHaveBeenCalledTimes(3);
+    expect(h.money()).toEqual({ spent: 30000, reserved: 0 });
   });
 
   it('injection overrides approval, persists quarantine, strips grant and prevents further quotes', async () => {
