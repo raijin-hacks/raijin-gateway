@@ -26,7 +26,8 @@ hanging transport deadline. Crash/restart/durable recovery (A18/A19) remains the
 payments owners' responsibility; response loss here is a single-process test.
 
 For an explicit credentialed live model run, first arrange a separately provisioned
-MOCK gateway and attacker pages server. Set the once-issued mandate token and task
+MOCK gateway and the attacker pages server (`pnpm merchants:attacker`, which serves
+`demo/pages/*.txt` and the variant pages). Set the once-issued mandate token and task
 in your local shell, then run (never paste credentials into trace output):
 
 ```sh
