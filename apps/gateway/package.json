@@ -5,7 +5,8 @@
   "scripts": {
     "payments:wallets": "node src/payments/scripts/gen-wallets.ts",
     "payments:balance": "node --env-file-if-exists=../../.env src/payments/scripts/balance.ts",
-    "payments:pay-once": "node --env-file-if-exists=../../.env src/payments/scripts/pay-once.ts"
+    "payments:pay-once": "node --env-file-if-exists=../../.env src/payments/scripts/pay-once.ts",
+    "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@x402/core": "2.28.0",

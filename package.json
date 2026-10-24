@@ -9,6 +9,7 @@
     "payments:wallets": "pnpm --filter @apf/gateway payments:wallets",
     "payments:balance": "pnpm --filter @apf/gateway payments:balance",
     "payments:pay-once": "pnpm --filter @apf/gateway payments:pay-once",
-    "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope"
+    "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope",
+    "payments:test": "pnpm --filter @apf/gateway test"
   }
 }

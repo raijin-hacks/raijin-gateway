@@ -43,3 +43,21 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 
 **Open**
 - The x402 route pattern `GET /v1/pricing/:company` also matches `/v1/pricing/export`, but only for GET. When P6 adds `POST /v1/pricing/export`, give it its own route entry.
+
+## 2026-10-24 · P3 `getQuote(canonicalUrl, method)`
+
+**Done**
+- `quote.ts`: `getQuote` and `QuoteError` (`code: QuoteCode`). It sends no payment header, uses `redirect: 'manual'`, and has one 3 s `AbortSignal` that covers both the headers and the body.
+  - A 3xx is `QUOTE_INVALID` and is never followed. A non-402 is `NOT_402`. A network error, a timeout, or a body that stalls is `QUOTE_FAILED`.
+  - Requirements come from the base64 `PAYMENT-REQUIRED` header (x402 v2), falling back to a JSON body read with a 64 KB cap; over the cap is `QUOTE_INVALID`.
+  - It picks the `scheme: exact`, `eip155:84532`, USDC option (`USDC_ADDRESS` or the default, compared ignoring case). The amount must be a positive whole number and `payTo` an address, or the result is `QUOTE_INVALID`.
+  - `Quote.raw` is that selected `accepts[]` entry, unchanged. `payee` is lowercased.
+- `types.ts`: the §5 types `getQuote` needs, copied until `packages/contracts` exists (TODO: import from `@apf/contracts`).
+- `quote.test.ts`: 24 `node:test` cases against throwaway local merchants, written before the implementation. Run with `pnpm payments:test` (about 6 s; two tests wait out the real 3 s timeout).
+  - Mutation-checked: switching to `redirect: 'follow'` fails all 5 redirect tests, and removing the size cap fails both 64 KB tests.
+- Checked against the live PriceScope: it returns `{ amount: 10000, payee: 0x0d97…86ae, network: eip155:84532 }`.
+
+**Open**
+- P4: the x402 client builds a payment from the whole 402 response (`x402Version`, `resource`, `accepts`), so `pay` has to wrap `quote.raw` back into that shape (`x402Version: 2`, `accepts: [raw]`). If that proves awkward, propose a §6 change so `raw` holds the whole 402 response.
+- The JSON-body fallback expects the v2 shape (`network: eip155:84532`, `amount`). v1 bodies (`base-sepolia`, `maxAmountRequired`) come back as `QUOTE_INVALID`. None of our merchants send v1.
+- B: once `packages/contracts` lands, swap `types.ts` for the import.
