@@ -90,6 +90,6 @@ jobs:
       - name: Build
         run: npm run build
 
-# CD PLACEHOLDER: Design.md specifies a local demo and only tentative Azure hosting.
+# CD PLACEHOLDER: docs/Design.md specifies a local demo and only tentative Azure hosting.
 # Add deployment after a host, build artifact, environment, and credentials are defined.
 # Gate any future deployment on successful checks and a push to main (never a PR).
