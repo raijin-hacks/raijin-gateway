@@ -1,7 +1,7 @@
 # Chunk 3 · Judge, catalog, agent and evaluation
 
 **Size:** large. **Security-critical:** yes (URL parsing and the judge's input).
-**Read first:** `contracts.md` (sections 0, 3, 4 and 5) and the design doc's attack suite and evaluation sections.
+**Read first:** `final_contracts.md` (sections 0, 3, 4 and 5) and the design doc's attack suite and evaluation sections.
 
 ## Your job in one sentence
 
@@ -43,7 +43,7 @@ Environment variables (`.env`, never committed): `ADMIN_TOKEN`, `DATABASE_PATH`,
 export function loadCatalog(path: string): Catalog;                     // zod-validated; throws on any error
 export function canonicalize(rawUrl: string): { ok: true; url: string; origin: string; path: string; query: [string, string][] }
                                               | { ok: false; code: 'BAD_URL' | 'DUPLICATE_PARAM' };
-export function matchEndpoint(c: Canonical, method: HttpMethod, catalog: Catalog): EndpointMatch;  // type in contracts.md section 5
+export function matchEndpoint(c: Canonical, method: HttpMethod, catalog: Catalog): EndpointMatch;  // type in final_contracts.md section 5
 
 // apps/gateway/src/judge/index.ts
 export function createJudge(config: { model: string; apiKey: string; timeoutMs: number }): JudgeModule;
@@ -77,10 +77,10 @@ export function createStubJudge(mode: 'stub-escalate' | 'stub-approve'): JudgeMo
 - `loadCatalog` rejects duplicate IDs, overlapping endpoints, and invalid specs.
 
 ### J3 · `canonicalize` and `matchEndpoint` (Sat morning)
-Implement `contracts.md` section 3 exactly. Unit tests must cover: uppercase host, default port, explicit non-default port, fragment, userinfo, percent-encoded path, `..` and empty segments, repeated query params, empty query values, `http` on localhost versus a public host, path-template matching, an unknown endpoint on a known origin, and a known endpoint with an undeclared param.
+Implement `final_contracts.md` section 3 exactly. Unit tests must cover: uppercase host, default port, explicit non-default port, fragment, userinfo, percent-encoded path, `..` and empty segments, repeated query params, empty query values, `http` on localhost versus a public host, path-template matching, an unknown endpoint on a known origin, and a known endpoint with an undeclared param.
 
 ### J4 · `buildInput` and the canary test (Sat midday)
-- Build `JudgeInput` from `JudgeContext` using only the fields and rules in `contracts.md` section 4. Subject values appear only if they matched a mandate subject; option values only if they're in the catalog's fixed list; unknown URLs become lengths and types only.
+- Build `JudgeInput` from `JudgeContext` using only the fields and rules in `final_contracts.md` section 4. Subject values appear only if they matched a mandate subject; option values only if they're in the catalog's fixed list; unknown URLs become lengths and types only.
 - **Canary test:** every attack fixture contains a unique string like `CANARY-7f3a91`. Build judge input for every fixture and fail CI if any canary appears in the serialized JSON. This test runs on every commit.
 
 ### J5 · `judge` (Sat midday)

@@ -34,7 +34,7 @@ does not use TypeScript, replace the type-check step with the applicable check.
 
 ## CD PLACEHOLDER
 
-`Design.md` specifies local hosting for the demo; Azure is conditional. No deploy
+[The design](../../docs/Design.md) specifies local hosting for the demo; Azure is conditional. No deploy
 target, deployment command, artifact, or credentials are configured, so there is
 no deploy job. Once those are chosen, add a job gated on successful application
 checks and pushes to `main`, with an appropriate GitHub environment and scoped
