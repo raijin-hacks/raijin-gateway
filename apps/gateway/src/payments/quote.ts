@@ -1,5 +1,6 @@
 // P3 · getQuote: ask the merchant for its price without paying.
 import type { Address, HttpMethod, Quote, QuoteCode } from '@apf/contracts';
+import { readCapped } from './read-capped.js';
 
 export const NETWORK = 'eip155:84532';
 // Circle's test USDC on Base Sepolia.
@@ -68,37 +69,22 @@ async function readPaymentRequired(res: Response): Promise<unknown> {
     }
   }
 
-  const body = await readCapped(res);
+  let body: string | null;
+  try {
+    body = await readCapped(res, MAX_BODY_BYTES);
+  } catch (err) {
+    throw new QuoteError('QUOTE_FAILED', `reading 402 body failed: ${describe(err)}`, {
+      cause: err,
+    });
+  }
+  if (body === null) {
+    throw new QuoteError('QUOTE_INVALID', `402 body exceeds ${MAX_BODY_BYTES} bytes`);
+  }
   try {
     return JSON.parse(body);
   } catch (err) {
     throw new QuoteError('QUOTE_INVALID', '402 body is not JSON', { cause: err });
   }
-}
-
-async function readCapped(res: Response): Promise<string> {
-  if (!res.body) return '';
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_BODY_BYTES) {
-        await reader.cancel();
-        throw new QuoteError('QUOTE_INVALID', `402 body exceeds ${MAX_BODY_BYTES} bytes`);
-      }
-      chunks.push(value);
-    }
-  } catch (err) {
-    if (err instanceof QuoteError) throw err;
-    throw new QuoteError('QUOTE_FAILED', `reading 402 body failed: ${describe(err)}`, {
-      cause: err,
-    });
-  }
-  return Buffer.concat(chunks).toString('utf8');
 }
 
 function selectRequirements(paymentRequired: unknown): Record<string, unknown> {

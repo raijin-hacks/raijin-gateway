@@ -153,3 +153,17 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 
 **Open**
 - B's real `PaymentStore` is now on `main`. Run the payments tests against it (and A19) in addition to `MemoryPaymentStore`.
+
+## 2026-10-24 · critic.md item: keep purchased results (branch `chunk1/codex-fixes`)
+
+**Done**
+- Contract: new `PaymentStore.saveResponse(paymentId, { status_code, content_type, body })`, in `packages/contracts/src/types.ts` and `final_contracts.md` §5, marked there as a proposed amendment pending team sign-off. It saves only in `SUBMITTED`/`UNKNOWN`/`SETTLED`, and only the first reply is kept.
+- B's SQLite store (`db/payment-store.ts`): one conditional `UPDATE` into the existing `payments.response_json` column. It doesn't touch state, money or `updated_at`. B's tests cover each of the six states, first save wins, survival across a database close/reopen plus a later settle, and an unknown id.
+- `pay()`: saves any 2xx body (within the 1 MB cap) **before** deciding settled or unknown. A failed save is logged and never blocks settling. PR #17's `replay()` already returns `payments.response_json` once a payment is `SETTLED`, so a settlement the reconciler finds later now delivers the data instead of `response: null`.
+- Tests: 5 new `(i)` tests in `pay.test.ts` (delayed proof, retry keeps the first reply, 402/500/oversized not saved, a failing save still settles) and 9 in B's store test.
+  - Mutation-checked: removing the save from `pay()` fails 2 `(i)` tests; dropping the first-save rule from the store fails its test.
+- Full CI set passes: lint, format, typecheck, build; tests 1256 passed / 6 todo.
+
+**Open**
+- PR #17 must add one pass-through line, `saveResponse: (id, r) => store.saveResponse(id, r)`, to `withPaymentEvents` (and its mock store if typed as `PaymentStore`), or its typecheck fails after rebasing on this. Its own write of `response_json` after a synchronous settle becomes redundant but harmless.
+- The end-to-end pipeline test (delayed settlement, then poll and same-key retry return the data) needs PR #17 merged.

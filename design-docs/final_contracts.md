@@ -2,6 +2,8 @@
 
 v1.1: added `GET /catalog`, `PaymentStore`, `EndpointMatch`, `JudgeContext`; grant clamping moved to the gateway; `pay()` never marks a payment failed.
 
+Proposed amendment (owner A, pending team sign-off per section 6): `PaymentStore.saveResponse` keeps a merchant's 2xx reply before settlement is proven, so a delayed settlement can't leave a paid purchase without its data.
+
 The single source of truth for all four people. If code and this file disagree, this file wins until the team agrees to change it. Paste the relevant sections into every coding-agent prompt.
 
 ## 0. Decisions and conventions
@@ -559,6 +561,8 @@ export interface PaymentStore {
   settle(paymentId: string, txHash: string): Promise<boolean>;           // SIGNED|SUBMITTED|UNKNOWN -> SETTLED, moves reserved to spent
   fail(paymentId: string): Promise<boolean>;                             // RESERVED|SIGNED|SUBMITTED|UNKNOWN -> FAILED, releases reserved
   listUnresolved(): Promise<string[]>;                                   // ids in SIGNED, SUBMITTED, UNKNOWN
+  // The merchant's 2xx reply, saved when it arrives so a settlement proven later can't lose the purchased data.
+  saveResponse(paymentId: string, response: { status_code: number; content_type: string; body: string }): Promise<boolean>; // SUBMITTED|UNKNOWN|SETTLED, first save only
 }
 
 // ---------- Catalog matching (owner C) ----------

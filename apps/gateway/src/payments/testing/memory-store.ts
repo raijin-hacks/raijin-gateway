@@ -2,7 +2,10 @@
 // Stand-in until Chunk 2 delivers the SQLite store. Records every call so tests can check the order of writes.
 import type { Address, EpochMs, Money, PaymentState, PaymentStore } from '@apf/contracts';
 
-type Row = NonNullable<Awaited<ReturnType<PaymentStore['get']>>> & { tx_hash: string | null };
+type Row = NonNullable<Awaited<ReturnType<PaymentStore['get']>>> & {
+  tx_hash: string | null;
+  response_json: string | null;
+};
 
 export class MemoryPaymentStore implements PaymentStore {
   rows = new Map<string, Row>();
@@ -20,6 +23,7 @@ export class MemoryPaymentStore implements PaymentStore {
       valid_before: null,
       authorization_json: null,
       tx_hash: null,
+      response_json: null,
     });
   }
 
@@ -33,6 +37,7 @@ export class MemoryPaymentStore implements PaymentStore {
       valid_before: null,
       authorization_json: null,
       tx_hash: null,
+      response_json: null,
       ...row,
     });
   }
@@ -75,6 +80,20 @@ export class MemoryPaymentStore implements PaymentStore {
     return [...this.rows.values()]
       .filter((r) => ['SIGNED', 'SUBMITTED', 'UNKNOWN'].includes(r.state))
       .map((r) => r.id);
+  }
+
+  async saveResponse(
+    paymentId: string,
+    response: { status_code: number; content_type: string; body: string },
+  ) {
+    const row = this.rows.get(paymentId);
+    const changed =
+      !!row &&
+      row.response_json === null &&
+      ['SUBMITTED', 'UNKNOWN', 'SETTLED'].includes(row.state);
+    if (changed) row.response_json = JSON.stringify(response);
+    this.calls.push({ method: 'saveResponse', paymentId, changed });
+    return changed;
   }
 
   called(method: string): number {

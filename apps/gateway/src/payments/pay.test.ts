@@ -42,7 +42,9 @@ type Outcome =
   | 'settle_slowly'
   | '402'
   | '500'
-  | '200_without_settlement_header';
+  | '200_without_settlement_header'
+  | 'settle_with_endless_body'
+  | 'endless_body_without_settlement';
 
 interface PaidRequest {
   header: string; // PAYMENT-SIGNATURE exactly as received
@@ -55,6 +57,7 @@ interface PaidRequest {
 async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: Outcome[]) {
   const paid: PaidRequest[] = [];
   let unpaid = 0;
+  let bytesSent = 0;
   const origin = await listen(async (req, res) => {
     const header = req.headers['payment-signature'];
     if (typeof header !== 'string') {
@@ -115,9 +118,34 @@ async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: 
       case '200_without_settlement_header':
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end('{"company":"acme","products":[]}');
+      case 'settle_with_endless_body':
+      case 'endless_body_without_settlement': {
+        const proof = encode({
+          success: true,
+          transaction: TX,
+          network: 'eip155:84532',
+          payer: authorization.from,
+        });
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          ...(outcome === 'settle_with_endless_body' ? { 'PAYMENT-RESPONSE': proof } : {}),
+        });
+        // Keeps writing until the gateway hangs up.
+        const chunk = Buffer.alloc(64 * 1024, 'a');
+        const pump = () => {
+          while (!res.destroyed && res.write(chunk)) bytesSent += chunk.length;
+          if (!res.destroyed) res.once('drain', pump);
+        };
+        return pump();
+      }
     }
   });
-  return { url: `${origin}/v1/pricing/acme?period=30d`, paid, unpaidCount: () => unpaid };
+  return {
+    url: `${origin}/v1/pricing/acme?period=30d`,
+    paid,
+    unpaidCount: () => unpaid,
+    bytesSent: () => bytesSent,
+  };
 }
 
 // A JSON-RPC endpoint that counts calls and answers nothing useful: proves when no chain lookup happened.
@@ -470,6 +498,114 @@ test('(g) reconciler failed the payment while the request was in flight: ambiguo
 
   assert.equal(result.state, 'FAILED');
   assert.equal(store.called('fail'), 0);
+});
+
+// ---------- (h) a merchant can't make the gateway buffer an unbounded response ----------
+
+test('(h) endless response with settlement proof: cut off at the size limit, the payment still settles', async () => {
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['settle_with_endless_body']);
+
+  const started = performance.now();
+  const result = await payments.pay(paymentId, quote);
+
+  assert.equal(result.state, 'SETTLED', 'the settlement proof in the headers is still honoured');
+  assert.equal(
+    result.state === 'SETTLED' && result.response.body,
+    '',
+    'the oversized body is not delivered',
+  );
+  assert.equal((await store.get(paymentId))?.state, 'SETTLED');
+  assert.ok(performance.now() - started < 5_000, 'stopped on size, not on the 15 s timeout');
+  assert.ok(
+    m.bytesSent() < 32 * 1024 * 1024,
+    `kept reading: merchant pushed ${m.bytesSent()} bytes`,
+  );
+});
+
+test('(h) endless response without settlement proof: cut off quickly, UNKNOWN, never FAILED', async () => {
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['endless_body_without_settlement']);
+
+  const started = performance.now();
+  assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
+
+  assert.equal(store.called('fail'), 0);
+  assert.ok(performance.now() - started < 5_000, 'stopped on size, not on the 15 s timeout');
+  assert.ok(
+    m.bytesSent() < 32 * 1024 * 1024,
+    `kept reading: merchant pushed ${m.bytesSent()} bytes`,
+  );
+});
+
+// ---------- (i) the purchased data is kept before settlement is proven ----------
+
+const ACME = {
+  status_code: 200,
+  content_type: 'application/json',
+  body: '{"company":"acme","products":[]}',
+};
+const savedResponse = (store: MemoryPaymentStore, id: string) => {
+  const json = store.rows.get(id)?.response_json;
+  return json ? JSON.parse(json) : null;
+};
+
+test('(i) 200 with data but no settlement proof yet: the data is saved and still there once settlement is recorded', async () => {
+  const { store, paymentId, payments, quote } = await setup(['200_without_settlement_header']);
+
+  assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
+  assert.deepEqual(savedResponse(store, paymentId), ACME, 'saved before settlement was proven');
+
+  assert.equal(await store.settle(paymentId, TX), true); // the reconciler finds the settlement later
+  assert.deepEqual(savedResponse(store, paymentId), ACME, 'delivered from the saved reply');
+});
+
+test('(i) a retry keeps the first saved reply', async () => {
+  const { store, paymentId, payments, quote } = await setup([
+    '200_without_settlement_header',
+    'settle',
+  ]);
+
+  assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
+  assert.equal((await payments.pay(paymentId, quote)).state, 'SETTLED');
+
+  assert.deepEqual(
+    store.calls.filter((c) => c.method === 'saveResponse').map((c) => c.changed),
+    [true, false],
+  );
+  assert.deepEqual(savedResponse(store, paymentId), ACME);
+});
+
+for (const outcome of ['402', '500', 'endless_body_without_settlement'] as const) {
+  test(`(i) ${outcome}: nothing is saved as purchased data`, async () => {
+    const { store, paymentId, payments, quote } = await setup([outcome]);
+
+    await payments.pay(paymentId, quote);
+
+    assert.equal(savedResponse(store, paymentId), null);
+  });
+}
+
+test('(i) a failing save does not stop the settlement from being recorded', async () => {
+  const { store, paymentId, payments, quote } = await setup(['settle']);
+  store.saveResponse = async () => {
+    throw new Error('disk full');
+  };
+
+  const result = await payments.pay(paymentId, quote);
+
+  assert.equal(result.state, 'SETTLED');
+  assert.equal((await store.get(paymentId))?.state, 'SETTLED');
 });
 
 // ---------- (c) a payment stuck in SIGNED is failed by the reconciler ----------

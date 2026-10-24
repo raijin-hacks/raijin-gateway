@@ -5,10 +5,13 @@ import { x402Client, x402HTTPClient } from '@x402/core/client';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { privateKeyToAccount } from 'viem/accounts';
 import { NETWORK, usdcAddress } from './quote.js';
+import { readCapped } from './read-capped.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore, Quote } from '@apf/contracts';
 
 const PAID_REQUEST_TIMEOUT_MS = 15_000;
+// The most of a merchant's response the gateway reads; reading stops as soon as it is exceeded.
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 type PayResult = Awaited<ReturnType<PaymentsModule['pay']>>;
 
@@ -130,7 +133,7 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
     }
 
     let res: Response;
-    let body: string;
+    let body: string | null;
     try {
       res = await fetch(quote.url, {
         method: quote.method,
@@ -138,11 +141,32 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
         redirect: 'manual',
         signal: AbortSignal.timeout(PAID_REQUEST_TIMEOUT_MS),
       });
-      body = await res.text();
+      body = await readCapped(res, MAX_RESPONSE_BYTES);
     } catch (err) {
       // Timeout or dropped connection: the merchant may have settled anyway.
       console.warn(`[payments] ${paymentId} UNKNOWN: paid request failed: ${describe(err)}`);
       return markUnknown(paymentId);
+    }
+    if (body === null) {
+      // Still decide settlement from the headers below; the oversized body is not delivered.
+      console.error(
+        `[payments] ${paymentId}: merchant response exceeded ${MAX_RESPONSE_BYTES} bytes; not delivered`,
+      );
+    }
+    const response = {
+      status_code: res.status,
+      content_type: res.headers.get('content-type') ?? '',
+      body: body ?? '',
+    };
+    // Keep what was bought before deciding settlement: if the proof only comes later (through the
+    // reconciler), the data must still be there to deliver. A save failure must not block settling.
+    if (res.status >= 200 && res.status < 300 && body !== null) {
+      await store.saveResponse(paymentId, response).catch((err: unknown) => {
+        console.error(
+          `[payments] ${paymentId}: could not save the merchant response: ${describe(err)}`,
+        );
+        return false;
+      });
     }
 
     // 5. Only a 2xx carrying a successful settlement with a tx hash proves payment.
@@ -161,11 +185,7 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, 
       return {
         state: 'SETTLED',
         txHash,
-        response: {
-          status_code: res.status,
-          content_type: res.headers.get('content-type') ?? '',
-          body,
-        },
+        response,
       };
     }
 
