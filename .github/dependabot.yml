@@ -16,8 +16,10 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
+      time: "06:00"
+      timezone: "America/Los_Angeles"
+
     open-pull-requests-limit: 0
     cooldown:
       default-days: 7
@@ -32,8 +34,7 @@ updates:
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
     open-pull-requests-limit: 0
     cooldown:
       default-days: 7
@@ -48,8 +49,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
     open-pull-requests-limit: 0
     cooldown:
       default-days: 7
