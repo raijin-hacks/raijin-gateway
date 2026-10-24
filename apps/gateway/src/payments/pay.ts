@@ -3,10 +3,10 @@
 // pay() never calls store.fail(): a merchant's rejection proves nothing while the authorization can still be cashed.
 import { x402Client, x402HTTPClient } from '@x402/core/client';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
-import { privateKeyToAccount } from 'viem/accounts';
 import { MAX_AUTHORIZATION_SECONDS, NETWORK, usdcAddress, validateTimeout } from './quote.js';
 import { readCapped } from './read-capped.js';
 import type { createReconcile, SettlementReceipt } from './reconcile.js';
+import type { PaymentSigner } from './signer.js';
 import type { Transport } from './transport.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore, Quote } from '@apf/contracts';
@@ -36,15 +36,12 @@ export class SettlementNotRecordedError extends Error {
 
 export function createPay(
   store: PaymentStore,
-  walletPrivateKey: `0x${string}`,
+  signer: PaymentSigner,
   clock: Clock,
   reconcile: ReturnType<typeof createReconcile>,
   transport: Transport,
 ) {
-  const client = new x402Client().register(
-    'eip155:*',
-    new ExactEvmScheme(privateKeyToAccount(walletPrivateKey)),
-  );
+  const client = new x402Client().register('eip155:*', new ExactEvmScheme(signer));
   const http = new x402HTTPClient(client);
 
   // One paid request per payment at a time in this process: a concurrent call joins the one in flight instead of
@@ -134,8 +131,8 @@ export function createPay(
     const paymentHeaders = http.encodePaymentSignatureHeader(paymentPayload);
     const paymentSignature = new Headers(paymentHeaders).get('PAYMENT-SIGNATURE') ?? '';
     const storedSignature = String(paymentPayload.payload?.signature ?? '');
+    // Key-shaped values are redacted by shape; the key itself never reaches pay() any more.
     const logSecrets = [
-      walletPrivateKey,
       quote.payee,
       row.payee,
       authorizationJson,

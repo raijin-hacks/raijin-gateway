@@ -24,6 +24,7 @@ describe('loadConfig', () => {
       paymentsMode: 'mock',
       judgeMode: 'stub-escalate',
       standingGrants: false,
+      paymentSigner: 'local',
       streamHeartbeatMs: TIMING.streamHeartbeatMs,
     });
   });
@@ -38,6 +39,8 @@ describe('loadConfig', () => {
         PAYMENTS_MODE: 'real',
         JUDGE_MODE: 'stub-approve',
         STANDING_GRANTS: 'on',
+        PAYMENT_SIGNER: 'cdp',
+        CDP_SIGNER_ADDRESS: '0x432D4cEA07086049E9c2125348285A01c084Fe5B',
         WALLET_PRIVATE_KEY: 'not-ours-to-read',
       }),
     ).toEqual({
@@ -48,8 +51,21 @@ describe('loadConfig', () => {
       paymentsMode: 'real',
       judgeMode: 'stub-approve',
       standingGrants: true,
+      paymentSigner: 'cdp',
+      cdpSignerAddress: '0x432D4cEA07086049E9c2125348285A01c084Fe5B',
       streamHeartbeatMs: TIMING.streamHeartbeatMs,
     });
+  });
+
+  it('refuses PAYMENT_SIGNER=cdp without a pinned CDP_SIGNER_ADDRESS', () => {
+    expect(() => loadConfig({ ADMIN_TOKEN, PAYMENT_SIGNER: 'cdp' })).toThrow(/CDP_SIGNER_ADDRESS/);
+  });
+
+  it('refuses an unknown PAYMENT_SIGNER and a malformed CDP_SIGNER_ADDRESS', () => {
+    expect(() => loadConfig({ ADMIN_TOKEN, PAYMENT_SIGNER: 'remote' })).toThrow(/PAYMENT_SIGNER/);
+    expect(() =>
+      loadConfig({ ADMIN_TOKEN, PAYMENT_SIGNER: 'cdp', CDP_SIGNER_ADDRESS: 'cdp-account' }),
+    ).toThrow(/CDP_SIGNER_ADDRESS/);
   });
 
   it.each(['0', '65535'])('accepts PORT=%s', (PORT) => {

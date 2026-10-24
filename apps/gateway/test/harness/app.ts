@@ -57,6 +57,7 @@ export function createHarness(
     paymentsMode: 'mock',
     judgeMode: 'stub-escalate',
     standingGrants: false,
+    paymentSigner: 'local',
     streamHeartbeatMs: 15_000,
     ...overrides,
   };

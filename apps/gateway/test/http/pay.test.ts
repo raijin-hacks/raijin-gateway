@@ -197,6 +197,32 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     expect(h.count('approvals')).toBe(0);
   });
 
+  it('denies an unselected merchant even when the subject would only escalate (deny wins over review)', async () => {
+    // Found live: a pricing mandate (acme, PriceScope only) asking SkyData about Oakland went to
+    // human review via SUBJECT_NOT_IN_MANDATE instead of being denied MERCHANT_NOT_SELECTED.
+    const judge = createStubJudge('stub-approve');
+    const judged = vi.spyOn(judge, 'judge');
+    const h = await fixture(judge);
+    const pricing = await h.createMandate({
+      agent_id: 'agt_pricing',
+      task: 'Compile current list prices for Acme.',
+      subjects: ['acme'],
+      allowed_merchant_ids: ['mer_pricing'],
+    });
+    const result = await h.pay(
+      h.purchase({ url: 'http://localhost:4102/v1/forecast?city=oakland&units=metric' }),
+      pricing.token,
+    );
+    expect(result.body).toMatchObject({
+      status: 'denied',
+      stage: 'precontact',
+      reasons: ['MERCHANT_NOT_SELECTED'],
+    });
+    expect(h.payments.getQuote).not.toHaveBeenCalled();
+    expect(judged).not.toHaveBeenCalled();
+    expect(h.count('approvals')).toBe(0);
+  });
+
   it('rejects an over-cap real quote before reserving funds or invoking the judge', async () => {
     const judge = createStubJudge('stub-approve');
     const judged = vi.spyOn(judge, 'judge');

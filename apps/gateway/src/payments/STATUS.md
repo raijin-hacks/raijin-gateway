@@ -198,3 +198,62 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - Not yet done: one real Base Sepolia payment through the gateway in `PAYMENTS_MODE=real` (needs the wallet key in `.env`). This is the 6 PM checkpoint.
 - Peer verification is defensive; no test forces a mismatched peer.
 - A destination refused inside `pay()` happens after `markSubmitted`, so the payment goes `UNKNOWN` and the reconciler fails it after expiry (nothing was sent).
+
+## 2026-10-24 · Integrated settlement proof (branch `chunk1/settlement-proof`)
+
+**Proven (live, Base Sepolia, through the actual gateway)**
+- Setup: gateway in `PAYMENTS_MODE=real` with the J2b pinned transport, `JUDGE_MODE=stub-approve`, temp SQLite DB; PriceScope at `http://localhost:4101`. **This is the exact-loopback demo exception, not HTTPS evidence.** Facilitator: `https://x402.org/facilitator` (the public test facilitator, not CDP's). Signer: local key (`WALLET_PRIVATE_KEY`), payer `0x34be…a582`. Merchant content is synthetic fixture data.
+- Mandate `mnd_01M5QP2YJNX6YEHJEHHXHCDMFW` (agt_pricing, subject acme, PriceScope only) → `/pay` → `approved` at stage judge, decision `dec_01M5QP2YJYVV2KT42KGF2GF1XT`, payment `pay_01M5QP2YKFRAX7G2P1FBY2HS9V`, 1.8 s, with PriceScope's Acme body delivered.
+- Chain: tx `0xf37bcfdcd361ac3072299e4f15636b17a5ea47dfd36d515b76dd7474309abcb4`, block 49740769, status success. USDC logs show `AuthorizationUsed(0x34Be…, 0x7ab3…a7c4)` and `Transfer 0x34Be… → 0x0d97… 10000`. The stored nonce reads as used on-chain.
+- Ledger: payment `SETTLED` with that tx hash; mandate spent 10000, reserved 0; one payments row; saved response sha256 `498d541e…`.
+- Same-key replay: same decision and payment returned in 34 ms; still one payments row, spent 10000, same response hash, no new signature.
+- Forbidden destinations, live through `/pay`: uncataloged HTTPS host → `UNCATALOGED_ENDPOINT`; `169.254.169.254` → `BAD_URL`; uncataloged path → `UNCATALOGED_ENDPOINT`; all denied at pre-contact with no payment row.
+
+**Bug found and fixed (Chunk 2, pre-contact order)**
+- Live: an unselected merchant (SkyData) whose subject also wasn't in the mandate went to human review (`SUBJECT_NOT_IN_MANDATE`, escalate) instead of being denied `MERCHANT_NOT_SELECTED`. Hard denials now run before escalating checks. Regression test added; confirmed live afterwards (`denied MERCHANT_NOT_SELECTED precontact`).
+
+**Not yet proven live**
+- Dropped reply + restart and delayed proof on the real chain: these need a merchant failure mode (`/_control drop_after_settle`, P6). Covered by in-process tests with injected timing (Codex, `chunk1/recovery-tests`), labeled as simulated.
+
+## 2026-10-24 · CDP spike: passed (policy enforced remotely, admin/runtime keys separated)
+Script: `pnpm --filter @apf/gateway payments:cdp-spike admin` then `... runtime`, as separate processes; `@coinbase/cdp-sdk` pinned at 1.59.0 (1.60.0 is under the 7-day release-age rule). CDP server account `0x432D4cEA07086049E9c2125348285A01c084Fe5B`; policy `60fd197c-c874-4b81-9497-aaf8968a66a1`, created and attached by the admin key; all probes below ran under the runtime key alone.
+
+**Policy:** accept `signEvmTypedData` only when the verifying contract is Base Sepolia USDC, the type is `TransferWithAuthorization`, `to` is PriceScope `0x0d97…86ae` and `value` <= 10000; reject `signEvmHash`, `signEvmMessage`, `signEvmTransaction`, `sendEvmTransaction`.
+
+**Remote results (real CDP API, not a simulator, not client spendControls):**
+
+| Probe | Result |
+|---|---|
+| 10000 to PriceScope, USDC | signed; signature recovers to the account |
+| value 10001 | 403 policy_violation |
+| payee = attacker | 403 policy_violation |
+| different verifying contract | 403 policy_violation |
+| primaryType Permit | 403 policy_violation |
+| signHash of an over-cap transfer | 403 policy_violation (**allowed in the first run**, before explicit reject rules) |
+| signMessage | 403 policy_violation (**allowed in the first run**) |
+
+**No-match behavior (observed):** within an operation that has rules, a non-matching request is rejected. An operation with **no rules at all is allowed**. So every other signing route needs an explicit reject rule; without one, `signHash` of an over-cap transfer bypasses the typed-data rule.
+
+| runtime key `updatePolicy` (loosen) | 403 Missing required scope: policies#manage |
+| runtime key detaches the account policy | 403 Missing required scope: policies#manage; the policy is still attached afterwards |
+
+**Separation: passing.** Policy administration needs the admin key (`CDP_ADMIN_API_KEY_*`); the gateway's runtime key can sign but can't edit or detach its policy.
+- Gotcha found: `@coinbase/cdp-sdk` keeps one module-level HTTP client, so the last `CdpClient` constructed in a process decides which key every call uses. An earlier single-process run therefore sent the "runtime" probes with the admin key and wrongly showed separation failing. The gateway must only ever construct the runtime client.
+- Remaining trust: whoever holds the admin key, and CDP itself. The wallet secret is shared by both keys in this setup.
+
+**What the policy does NOT check:** HTTP endpoint, subjects, plan or cumulative totals. It is a per-signature cap on payee, value, token and type only.
+
+## 2026-10-24 · CDP signer integrated and proven through the gateway
+- Code: `payments/signer.ts` (`PAYMENT_SIGNER=cdp`, pinned `CDP_SIGNER_ADDRESS`); the default stays `local`. No fallback to `WALLET_PRIVATE_KEY`; a CDP refusal or timeout throws before anything is stored or sent.
+- Live allowed purchase, gateway in `PAYMENTS_MODE=real PAYMENT_SIGNER=cdp`: payment `pay_01M5QQP5GEAVG0G8XYV3GGR8KD`, decision `dec_01M5QQP5G8RT1NMJZG2K6TDVRM`, approved in 2.0 s with the body delivered. Chain: tx `0x87d139ba2b14352fdfa5f9bd410a6eacfaa6eb0f872ba858d35b8fc26836e6da`, block 49749161, success; `AuthorizationUsed` by CDP account `0x432D4cEA07086049E9c2125348285A01c084Fe5B` and `Transfer 0x432D… → 0x0d97… 10000`; stored nonce used on-chain. Ledger: `SETTLED`, mandate spent 20000 (two purchases), reserved 0.
+- Same-key replay: same payment in 31 ms; still 2 payment rows, spent 20000, no new signature.
+- Bypassed application check (live): the gateway's CDP adapter, called directly with `pay()`'s checks skipped, asked to sign 500000 to the attacker → `403 policy_violation`.
+- Facilitator: public x402.org test facilitator (not CDP's). Merchant: exact-loopback demo exception, synthetic content.
+- Not claimed: the CDP policy doesn't know HTTP endpoints, subjects, plans or cumulative totals; it caps each signature's payee, value, token and type.
+
+## 2026-10-24 · Live dropped reply + restart (CDP signer, real chain)
+- PriceScope from `chunk1/p6-control`, mode `drop_after_settle` (settles, then destroys the socket before the body).
+- `/pay` → `payment_unknown` for `pay_01M5QR1KAES640R6F99HH6RQVZ` (1.6 s). The reconciler's loop found the settlement within seconds: tx `0xbd4d056668fc5f4120a716d16bde95acca62bdda72e4cc2903f952477cd64675`, block 49751035, `AuthorizationUsed` by CDP account `0x432D…Fe5B`, `Transfer 0x432D… → 0x0d97… 10000`, stored nonce used.
+- Gateway stopped and restarted on the same database; same-key retry → `approved`, same payment id, 35 ms, `response: null` (the merchant never sent a body, so there was none to save). Ledger: 3 payment rows in total (no new one), spent 30000, reserved 0.
+- Found on the way: PriceScope bound only `127.0.0.1`, while the pinned transport connected to `::1` (first answer for `localhost`), so quotes failed closed with `QUOTE_FAILED`. PriceScope now serves both loopback addresses.
+- Delayed proof as a separate live case (payment held `UNKNOWN`, then settled) is covered by the recovery tests with injected timing; here the reconciler found the proof within seconds.
