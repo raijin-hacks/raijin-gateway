@@ -1,0 +1,16 @@
+{
+  "name": "@apf/gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "payments:wallets": "node src/payments/scripts/gen-wallets.ts",
+    "payments:balance": "node --env-file-if-exists=../../.env src/payments/scripts/balance.ts",
+    "payments:pay-once": "node --env-file-if-exists=../../.env src/payments/scripts/pay-once.ts"
+  },
+  "dependencies": {
+    "@x402/core": "2.28.0",
+    "@x402/evm": "2.28.0",
+    "@x402/fetch": "2.28.0",
+    "viem": "2.57.7"
+  }
+}
