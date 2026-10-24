@@ -13,6 +13,10 @@ type Totals = {
   judgeMs: number[];
 };
 
+// Medians use the most recent samples, so a long flood doesn't make every update re-sort
+// everything since page load.
+const MAX_SAMPLES = 1000;
+
 export default function StatsHeader() {
   const startedAt = useRef(0);
   const seen = useRef(new Set<string>());
@@ -50,8 +54,8 @@ export default function StatsHeader() {
         decisions: t.decisions + add.decisions,
         judgeCalls: t.judgeCalls + add.judgeCalls,
         grantHits: t.grantHits + add.grantHits,
-        grantMs: [...t.grantMs, ...add.grantMs],
-        judgeMs: [...t.judgeMs, ...add.judgeMs],
+        grantMs: [...t.grantMs, ...add.grantMs].slice(-MAX_SAMPLES),
+        judgeMs: [...t.judgeMs, ...add.judgeMs].slice(-MAX_SAMPLES),
       }));
       updateMinutes();
     });

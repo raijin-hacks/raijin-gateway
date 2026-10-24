@@ -26,6 +26,12 @@ export async function GET(request: Request) {
   return new Response(upstream.body, { headers: SSE_HEADERS });
 }
 
+// MOCK_EVENTS_PER_SEC (optional) sends mock events at a fixed rate, e.g. 50 for the D-flood check.
+function mockRate(): number | undefined {
+  const rate = Number(process.env.MOCK_EVENTS_PER_SEC);
+  return rate > 0 && rate <= 1000 ? rate : undefined;
+}
+
 function mockStream(signal: AbortSignal): Response {
   const encoder = new TextEncoder();
   let stop = () => {};
@@ -35,7 +41,7 @@ function mockStream(signal: AbortSignal): Response {
     start(controller) {
       stop = startMockStream((event) => {
         if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-      });
+      }, mockRate());
       signal.addEventListener('abort', () => {
         stop();
         if (closed) return; // the browser already cancelled the stream

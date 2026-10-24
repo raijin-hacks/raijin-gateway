@@ -72,6 +72,19 @@ Put `MOCK=1` in `apps/dashboard/.env.local`. Every route then answers with fixed
 | `lib/stream.ts` | One shared `EventSource` for the whole page |
 | `scripts/send-traffic.mjs` | Fake agent traffic for local testing |
 
+## D-flood check (feed responsive at 50 events per second)
+
+Run it with `MOCK=1` and `MOCK_EVENTS_PER_SEC=50` in `.env.local`, then watch the page for a minute.
+
+Measured 2026-10-24 in the desktop app's browser pane, page loaded fresh, 60 s at 50 events per second, in three 20 s windows:
+
+| | Avg event-loop lag | Max lag | Click a row → opens | Page elements | JS heap |
+|---|---|---|---|---|---|
+| Before the fix (queue uncapped) | 112–145 ms, rising | ~450 ms | 81–84 ms | 18,900 → 21,000 | 71–82 MB |
+| After (queue shows 20, stats keep 1,000 samples) | 5–7 ms | 78–96 ms | 23–54 ms | 6,384, flat | 56–59 MB, flat |
+
+The approval queue had been rendering a form for every pending item (650+ in under a minute of mock flood), which slowed the whole page. It now shows the oldest 20 with a count of the rest; MOCK mode also keeps at most 200. Real traffic rarely queues that many, but the cap keeps the page usable if it does.
+
 ## Known gaps
 
 - One shared operator password, not per-person accounts.

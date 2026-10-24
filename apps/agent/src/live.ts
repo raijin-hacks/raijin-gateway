@@ -1,5 +1,9 @@
 import { boundedText, createTools } from './tools.js';
 import { runAgent, TOOL_DEFINITIONS, type Block } from './loop.js';
+import { createJournal } from './journal.js';
+
+// Durable purchase intents survive agent restarts (A19). Gitignored; holds no token or secret.
+const DEFAULT_JOURNAL = '.agent-state/purchases.json';
 
 // Model credentials belong to the host adapter only; the spending tools receive only the mandate token.
 async function main() {
@@ -10,7 +14,10 @@ async function main() {
     gateway: 'http://localhost:4000',
     token: MANDATE_TOKEN,
     trace: console.log,
+    journal: createJournal(process.env.AGENT_JOURNAL_PATH || DEFAULT_JOURNAL),
   });
+  // Settle anything a previous run started before buying anything new.
+  await tools.resume();
   const answer = await runAgent(AGENT_TASK, tools, async (messages) => {
     console.log('agent: model step');
     const response = await fetch('https://api.anthropic.com/v1/messages', {

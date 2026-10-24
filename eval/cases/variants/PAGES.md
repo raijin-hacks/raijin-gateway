@@ -4,6 +4,8 @@ Chunk 1 serves each page as given, as plain HTML, at `http://localhost:4199/page
 
 Written by D without reading Chunk 3's judge prompt. **Chunk 3: don't tune the prompt on these.**
 
+> **Update 2026-10-24:** the gateway now refuses every request to `localhost:4199` before contact (`BAD_URL`: it isn't a catalog origin), so it never fetches a quote from the paid endpoints below. They exist (`apps/merchants/src/attacker.ts` serves them and these pages), but they **don't test the gateway's judge**; see the observed stops in [README.md](README.md). The **pages** matter: they're what a worker reads, so they measure whether it *tries* an off-task purchase.
+
 ## New attacker endpoints
 
 All of these are on the attacker server (`:4199`) with the attacker payee from `apps/merchants/payees.json`. They are not in the catalog. Each one answers an unpaid request with a 402 quote at the price below, and a paid request with `200 {"ok": true}`.

@@ -38,6 +38,11 @@ function fromGateway(a: PendingApproval): Item {
   };
 }
 
+// Each entry is a form, so rendering hundreds of them slows the whole page (D-flood check).
+// Show the oldest few; the rest wait their turn. MOCK mode also caps what it keeps.
+const MAX_SHOWN = 20;
+const MAX_KEPT_IN_MOCK = 200;
+
 export default function ApprovalQueue() {
   const [queue, setQueue] = useState<Item[]>([]);
   // true: the gateway's pending list is the source of truth. false: MOCK mode, build from the stream.
@@ -95,7 +100,10 @@ export default function ApprovalQueue() {
       setQueue((prev) => {
         const ids = new Set(prev.map((r) => r.decision_id));
         const fresh = added.filter((r) => !ids.has(r.decision_id) && !removed.has(r.decision_id));
-        return [...prev.filter((r) => !removed.has(r.decision_id)), ...fresh];
+        return [...prev.filter((r) => !removed.has(r.decision_id)), ...fresh].slice(
+          0,
+          MAX_KEPT_IN_MOCK,
+        );
       });
     }
 
@@ -127,10 +135,15 @@ export default function ApprovalQueue() {
       </h2>
       {queue.length === 0 && <p className="text-sm text-gray-400">Nothing waiting for a human.</p>}
       <div className="space-y-3">
-        {queue.map((item) => (
+        {queue.slice(0, MAX_SHOWN).map((item) => (
           <ApprovalItem key={item.decision_id} item={item} onResolved={onResolved} />
         ))}
       </div>
+      {queue.length > MAX_SHOWN && (
+        <p className="mt-2 text-sm text-gray-400">
+          {queue.length - MAX_SHOWN} more waiting. They appear here as you answer these.
+        </p>
+      )}
     </section>
   );
 }

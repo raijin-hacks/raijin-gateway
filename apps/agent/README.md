@@ -22,11 +22,15 @@ agent will do so or a real judge will catch it.
 The rehearsal drops the first settled response and asserts the retry retains its
 UUID and creates one payment. Separate tests cover redirect escapes, redirect
 loops, secret-bearing errors, terminal denials, pending/unknown polling, and a
-hanging transport deadline. Crash/restart/durable recovery (A18/A19) remains the
-payments owners' responsibility; response loss here is a single-process test.
+hanging transport deadline. `restart.test.ts` covers agent crash/restart (A19) against
+the real in-process gateway: crash before the first POST, after POST before the
+response, and after settlement before delivery; concurrent resumes; a 409 key
+conflict; and a corrupt journal. Each case asserts one payment and one signature.
+Gateway-side recovery (A18) remains the payments and gateway owners' responsibility.
 
 For an explicit credentialed live model run, first arrange a separately provisioned
-MOCK gateway and attacker pages server. Set the once-issued mandate token and task
+MOCK gateway and the attacker pages server (`pnpm merchants:attacker`, which serves
+`demo/pages/*.txt` and the variant pages). Set the once-issued mandate token and task
 in your local shell, then run (never paste credentials into trace output):
 
 ```sh
@@ -52,12 +56,33 @@ are printed. Page text is intentionally untrusted input to the agent model.
 Free fetch allows only simple `/pages/<slug>[/<slug>...]` paths at exactly
 `http://localhost:4199`, checks every redirect before contact, sends no credentials,
 and bounds hops, time and body size. Paid requests use only the fixed gateway;
-redirects are disabled. Exact repeated purchase arguments reuse the UUID for this
-agent session (intentional repeat purchases need a new session). At most 32 logical
-purchases are retained; each call has three submission attempts, three polls per
+redirects are disabled. Each call has three submission attempts, three polls per
 attempt and a 15-second total deadline. Pending/unknown returns preserve the stored
-identity, including across a later identical tool retry. Session restart does not
-persist client identities; do not restart an unresolved purchase as a new purchase.
+identity, including across a later identical tool retry.
+
+### Purchase journal (restart safety, A19)
+
+Before the first `POST /pay`, the agent writes the purchase's idempotency key and exact
+request to a journal, so a crash or restart resumes the same logical purchase instead of
+minting a new key. Exact repeated purchase arguments, for the same mandate, map to the
+same key in this run and in later runs; an intentional repeat purchase needs different
+arguments or a fresh journal.
+
+- **Location:** `AGENT_JOURNAL_PATH`, default `.agent-state/purchases.json` relative to
+  the working directory (gitignored). Directory `0700`, file `0600`.
+- **Contents:** the `PayRequest` (URL, method, expected price, purpose, key) and a
+  one-way SHA-256 fingerprint of the mandate token. Never the token or any secret.
+- **Writes:** atomic (temp file, fsync, rename) under a cross-process lock file, so
+  concurrent agents agree on one key. A lock older than 10 s is treated as abandoned.
+- **On start:** `agent:live` calls `resume()`, which replays every journaled request for
+  this mandate with its original key. The gateway returns the existing outcome, including
+  stored purchased data after settlement; nothing new is bought.
+- **Fails closed:** a corrupt, unknown-version or tampered journal (including two entries
+  sharing a key) raises `JOURNAL_CORRUPT` before any request is sent. Inspect or move it;
+  do not delete it while a purchase may be in flight. A gateway `409` for a key (already
+  bound to a different request) stops with `PAYMENT_CONFLICT`: no retry, no fresh key.
+- **Without a journal** (`createTools` with no `journal`), identity lasts only for the
+  process, capped at 32 purchases, as before.
 
 This command does not enable MOCK mode on a remote gateway: the operator must
 verify its configuration. Real payments remain blocked pending J2b; the existing
