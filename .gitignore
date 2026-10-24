@@ -24,3 +24,9 @@ coverage/
 design-docs/local/
 
 .DS_Store
+
+# iCloud Drive conflict copies ("file 2.ts", ".npmrc 2"): never commit them
+* 2
+* 2.*
+# Local agent worktrees and launcher config
+.claude/worktrees/
