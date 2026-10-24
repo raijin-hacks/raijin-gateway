@@ -5,12 +5,14 @@ import { randomBytes } from 'node:crypto';
 import { CdpClient } from '@coinbase/cdp-sdk';
 import { hashTypedData, recoverTypedDataAddress } from 'viem';
 import { systemClock } from '../../clock.js';
+import { createCdpSigner } from '../signer.js';
 
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYEE = '0x0d972d44bda2bc27420debd711395729480186ae'; // PriceScope
 const ATTACKER = '0xca7c3c3ac945e0febcebae02de1fbe847bcd4d19';
 const OTHER_TOKEN = '0x1111111111111111111111111111111111111111';
 const MAX = 10000n;
+const SIGNER = '0x432D4cEA07086049E9c2125348285A01c084Fe5B'; // the spike / demo CDP account
 
 const transferTypes = {
   EIP712Domain: [
@@ -33,8 +35,41 @@ const transferTypes = {
 // CdpClient constructed in a process silently decides which key every call uses.
 //   admin    (CDP_ADMIN_API_KEY_ID/SECRET): create a strict policy and attach it to the account.
 //   runtime  (CDP_API_KEY_ID/SECRET + CDP_WALLET_SECRET only): signing probes and separation attempts.
+//   bypass   (runtime credentials): the gateway's own CDP signer adapter, called directly with the
+//            application checks in pay() skipped, asked to sign an over-cap transfer to the attacker.
 const mode = process.argv[2];
-if (mode !== 'admin' && mode !== 'runtime') throw new Error('usage: cdp-spike.ts admin | runtime');
+if (mode !== 'admin' && mode !== 'runtime' && mode !== 'bypass')
+  throw new Error('usage: cdp-spike.ts admin | runtime | bypass');
+
+if (mode === 'bypass') {
+  const signer = await createCdpSigner({ address: SIGNER });
+  const request = {
+    domain: { name: 'USDC', version: '2', chainId: 84532, verifyingContract: USDC },
+    types: { TransferWithAuthorization: transferTypes.TransferWithAuthorization },
+    primaryType: 'TransferWithAuthorization',
+    message: {
+      from: signer.address,
+      to: ATTACKER,
+      value: '500000',
+      validAfter: '0',
+      validBefore: String(Math.floor(systemClock.now() / 1000) + 300),
+      nonce: `0x${randomBytes(32).toString('hex')}`,
+    },
+  };
+  try {
+    await signer.signTypedData(request);
+    console.log('bypass probe: SIGNED (CDP did not stop it)');
+  } catch (err) {
+    const e = err as { statusCode?: number; errorType?: string; message?: string };
+    console.log(
+      'bypass probe: refused by CDP:',
+      e.statusCode ?? '',
+      e.errorType ?? '',
+      e.message ?? '',
+    );
+  }
+  process.exit(0);
+}
 
 if (mode === 'admin') {
   const admin = new CdpClient({
