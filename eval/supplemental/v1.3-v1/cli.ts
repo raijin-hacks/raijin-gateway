@@ -10,10 +10,22 @@ import {
 import { ROOT, loadFrozen, runEntry, boundaryFailures, sha256 } from './suite.js';
 import { markdown, metrics, type Run } from './report.js';
 
-const args = process.argv.slice(2);
-if (args.some((a) => a !== '--live') || args.length > 1)
-  throw new Error('Usage: pnpm eval:v13:offline | pnpm eval:v13:live');
-const live = args.includes('--live');
+const USAGE = 'Usage: pnpm eval:v13:offline | pnpm eval:v13:live [--out-dir DIR]';
+const parseArgs = (args: string[]) => {
+  let live = false;
+  let outDir = `${ROOT}/results`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--live') live = true;
+    else if (arg === '--out-dir') {
+      const dir = args[++i];
+      if (!dir || dir.startsWith('-')) throw new Error(USAGE);
+      outDir = dir;
+    } else throw new Error(USAGE);
+  }
+  return { live, outDir };
+};
+const { live, outDir } = parseArgs(process.argv.slice(2));
 if (live && !process.env.ANTHROPIC_API_KEY)
   throw new Error('ANTHROPIC_API_KEY required; no fallback');
 // Freeze verification precedes every provider construction and request. No auto-freeze option.
@@ -98,8 +110,8 @@ const report = {
   })),
   runs,
 };
-mkdirSync(`${ROOT}/results`, { recursive: true });
-const stem = `${ROOT}/results/${live ? 'live-' + createdAt.replaceAll(':', '-') : 'offline'}`;
+mkdirSync(outDir, { recursive: true });
+const stem = `${outDir}/${live ? 'live-' + createdAt.replaceAll(':', '-') : 'offline'}`;
 writeFileSync(`${stem}.json`, JSON.stringify(report, null, 2) + '\n');
 writeFileSync(`${stem}.md`, markdown(runs, manifestHash, manifest.blocked, live));
 console.log(`${stem}.json\n${stem}.md`);
