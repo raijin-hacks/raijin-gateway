@@ -14,12 +14,12 @@ export function validateOutput(value: unknown): JudgeOutput {
   return parsed.data;
 }
 
-// The adapter receives only sanitized input. Transport/prompt/deadline arrive in PR 2.
+// The adapter receives only sanitized input; live-context projection arrives in PR 5.
 export interface JudgeProvider {
   judge(input: JudgeInput): Promise<unknown>;
 }
 
-export function createInjectedJudge(provider: JudgeProvider): JudgeModule {
+export function createInjectedJudge(provider: JudgeProvider, options: { preserveTypedErrors?: boolean } = {}): JudgeModule {
   return {
     buildInput() {
       // PR 5 owns context projection. Never pass a raw context through as a fallback.
@@ -33,7 +33,8 @@ export function createInjectedJudge(provider: JudgeProvider): JudgeModule {
       let output: unknown;
       try {
         output = await provider.judge(parsed.data);
-      } catch {
+      } catch (error) {
+        if (options.preserveTypedErrors && error instanceof JudgeError) throw new JudgeError(error.code);
         throw new JudgeError('JUDGE_ERROR');
       }
       return validateOutput(output);
@@ -54,3 +55,6 @@ export function createStubJudge(mode: 'stub-escalate' | 'stub-approve'): JudgeMo
     },
   });
 }
+
+export { createJudge, validateJudgeConfig } from './real.js';
+export type { JudgeConfig, JudgeDependencies } from './real.js';
