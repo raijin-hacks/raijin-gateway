@@ -274,14 +274,56 @@ Responses: HTTP 200 for decisions; 202 for an in-progress replay handle; 400 for
 
 | Method and path | Caller | Request | Response |
 |---|---|---|---|
+| `GET /agents` | Admin | none | `AgentSummary[]` (persistent agent trust) |
 | `POST /mandates` | Admin | `{ agent_id, task, subjects: string[], allowed_merchant_ids: string[], budget, expires_in_ms }` | `{ mandate_id, session_id, token }` (token shown once) |
 | `POST /mandates/:id/close` | Admin | `{}` | `{ ok: true }` (revokes token and grants) |
+| `GET /approvals?status=pending` | Admin | `status=pending` (required) | `PendingApproval[]` (durable reviews in `pay_workflows` state `REVIEW`) |
 | `GET /decisions/:id` | Agent (own mandate) or admin | none | The same shape as a `/pay` response |
 | `GET /payments/:id` | Agent (own mandate) or admin | none | `{ payment_id, state, amount, payee, tx_hash }` |
 | `POST /approvals/:decision_id` | Admin | `{ outcome: "approved" \| "rejected", note: string, issue_grant: boolean }` | `{ ok: true }` |
 | `GET /stream` | Dashboard (admin) | none | Server-sent events, each `StreamEvent` (section 5) |
 | `GET /catalog` | Admin | none | `Catalog` (for the dashboard's merchant checkboxes) |
 | `GET /health` | Anyone | none | `{ ok: true }` |
+
+#### `GET /agents` response
+
+`trust` is `agents.trust`, the persistent agent-level score. Session trust is specific to one
+mandate and is intentionally not used for this list.
+
+```json
+[
+  { "id": "agt_bulk", "name": "Bulk loader", "role": "bulk", "trust": 70 },
+  { "id": "agt_logistics", "name": "Logistics analyst", "role": "research", "trust": 70 },
+  { "id": "agt_pricing", "name": "Pricing researcher", "role": "research", "trust": 70 }
+]
+```
+
+#### `GET /approvals?status=pending` response
+
+The status query is required; a missing or unsupported status, or any additional query key, returns
+400. The endpoint lists only rows whose workflow is currently in `REVIEW`. `merchant`, `endpoint`,
+and `price` are null when a review has no catalog match or quote; the canonical URL and decision
+facts remain sourced from the stored decision. Prices are integer atomic USDC units. `deadline` is
+an epoch timestamp in milliseconds.
+
+```json
+[
+  {
+    "decision_id": "dec_01J00000000000000000000000",
+    "mandate_id": "mnd_01J00000000000000000000000",
+    "task": "Compile current list prices for the Q4 pricing review.",
+    "agent": { "id": "agt_pricing", "name": "Pricing researcher", "role": "research" },
+    "merchant": { "id": "mer_pricing", "name": "PriceScope" },
+    "endpoint": { "id": "end_pricing_get", "method": "GET", "path": "/v1/pricing/{company}" },
+    "canonical_url": "http://localhost:4101/v1/pricing/acme?period=30d",
+    "price": 10000,
+    "reasons": ["JUDGE_OVER_SCOPED"],
+    "judge_explanation": "The purchase appears broader than the assigned task.",
+    "stage": "judge",
+    "deadline": 1800000000000
+  }
+]
+```
 
 ### Reason codes
 

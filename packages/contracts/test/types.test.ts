@@ -4,6 +4,8 @@ import { expectTypeOf, it } from 'vitest';
 import type { z } from 'zod';
 import {
   ApprovalRequestSchema,
+  AgentSummarySchema,
+  AgentsResponseSchema,
   CatalogSchema,
   CreateMandateRequestSchema,
   HTTP_METHODS,
@@ -16,6 +18,8 @@ import {
   ParamSpecSchema,
   PayRequestSchema,
   PayResponseSchema,
+  PendingApprovalSchema,
+  PendingApprovalsResponseSchema,
   QUOTE_CODES,
   REASON_CODES,
   STAGES,
@@ -23,6 +27,8 @@ import {
   TIER0_CODES,
   TIER1_CODES,
   type ApprovalRequest,
+  type AgentSummary,
+  type AgentsResponse,
   type Catalog,
   type CreateMandateRequest,
   type HttpMethod,
@@ -32,6 +38,8 @@ import {
   type ParamSpec,
   type PayRequest,
   type PayResponse,
+  type PendingApproval,
+  type PendingApprovalsResponse,
   type PaymentState,
   type PrecontactCode,
   type PurposeCode,
@@ -66,4 +74,10 @@ it('zod schemas infer exactly the contract types', () => {
   expectTypeOf<z.infer<typeof StreamEventSchema>>().toEqualTypeOf<StreamEvent>();
   expectTypeOf<z.infer<typeof CreateMandateRequestSchema>>().toEqualTypeOf<CreateMandateRequest>();
   expectTypeOf<z.infer<typeof ApprovalRequestSchema>>().toEqualTypeOf<ApprovalRequest>();
+  expectTypeOf<z.infer<typeof AgentSummarySchema>>().toEqualTypeOf<AgentSummary>();
+  expectTypeOf<z.infer<typeof AgentsResponseSchema>>().toEqualTypeOf<AgentsResponse>();
+  expectTypeOf<z.infer<typeof PendingApprovalSchema>>().toEqualTypeOf<PendingApproval>();
+  expectTypeOf<
+    z.infer<typeof PendingApprovalsResponseSchema>
+  >().toEqualTypeOf<PendingApprovalsResponse>();
 });
