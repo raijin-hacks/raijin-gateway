@@ -43,56 +43,58 @@ export default function EventFeed() {
   return (
     <section>
       <h2 className="mb-2 text-lg font-semibold">Decisions</h2>
-      <table className="w-full text-left text-sm">
-        <thead className="text-gray-400">
-          <tr>
-            <th className="py-1 pr-3 font-normal">Time</th>
-            <th className="pr-3 font-normal">Mandate</th>
-            <th className="pr-3 font-normal">Stage</th>
-            <th className="pr-3 font-normal">Outcome</th>
-            <th className="pr-3 font-normal">Reasons</th>
-            <th className="pr-3 text-right font-normal">Price</th>
-            <th className="text-right font-normal">Latency</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ key, event: e }) => (
-            <Fragment key={key}>
-              <tr
-                onClick={() => setOpenKey(openKey === key ? null : key)}
-                className="cursor-pointer border-t border-gray-700 hover:bg-gray-800"
-              >
-                <td className="py-1 pr-3 font-mono">{new Date(e.at).toLocaleTimeString()}</td>
-                <td className="pr-3 font-mono">{e.mandate_id}</td>
-                <td className="pr-3">{e.stage}</td>
-                <td className={`pr-3 font-semibold ${OUTCOME_COLOR[e.outcome]}`}>{e.outcome}</td>
-                <td className="pr-3">
-                  <div className="flex flex-wrap gap-1">
-                    {e.reasons.map((r) => (
-                      <span key={r} className="rounded bg-gray-700 px-1.5 text-xs">
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="pr-3 text-right font-mono">
-                  {e.price !== null ? formatMoney(e.price) : '—'}
-                </td>
-                <td className="text-right font-mono">{e.latency_ms} ms</td>
-              </tr>
-              {openKey === key && (
-                <tr>
-                  <td colSpan={7}>
-                    <pre className="overflow-x-auto bg-gray-900 p-2 text-xs">
-                      {JSON.stringify(e, null, 2)}
-                    </pre>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="text-gray-400">
+            <tr>
+              <th className="py-1 pr-3 font-normal">Time</th>
+              <th className="pr-3 font-normal">Mandate</th>
+              <th className="pr-3 font-normal">Stage</th>
+              <th className="pr-3 font-normal">Outcome</th>
+              <th className="pr-3 font-normal">Reasons</th>
+              <th className="pr-3 text-right font-normal">Price</th>
+              <th className="text-right font-normal">Latency</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ key, event: e }) => (
+              <Fragment key={key}>
+                <tr
+                  onClick={() => setOpenKey(openKey === key ? null : key)}
+                  className="cursor-pointer border-t border-gray-700 hover:bg-gray-800"
+                >
+                  <td className="py-1 pr-3 font-mono">{new Date(e.at).toLocaleTimeString()}</td>
+                  <td className="pr-3 font-mono">{e.mandate_id}</td>
+                  <td className="pr-3">{e.stage}</td>
+                  <td className={`pr-3 font-semibold ${OUTCOME_COLOR[e.outcome]}`}>{e.outcome}</td>
+                  <td className="pr-3">
+                    <div className="flex flex-wrap gap-1">
+                      {e.reasons.map((r) => (
+                        <span key={r} className="rounded bg-gray-700 px-1.5 text-xs">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
                   </td>
+                  <td className="pr-3 text-right font-mono">
+                    {e.price !== null ? formatMoney(e.price) : '—'}
+                  </td>
+                  <td className="text-right font-mono">{e.latency_ms} ms</td>
                 </tr>
-              )}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+                {openKey === key && (
+                  <tr>
+                    <td colSpan={7}>
+                      <pre className="overflow-x-auto bg-gray-900 p-2 text-xs">
+                        {JSON.stringify(e, null, 2)}
+                      </pre>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

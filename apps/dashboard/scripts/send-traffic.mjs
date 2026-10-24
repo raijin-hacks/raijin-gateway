@@ -9,7 +9,11 @@
 // To see a grant hit: run it, approve the acme purchase in the queue with "Issue grant" ticked,
 // then rerun with MANDATE_TOKEN=<printed token> and the filter "acme".
 //
-// Needs the dashboard on :3000 (without MOCK) and the gateway on :4000.
+// Needs the dashboard on :3000 (without MOCK) and the gateway on :4000. Creating a mandate goes
+// through the dashboard, so the script signs in with DASHBOARD_PASSWORD (from the environment, or
+// else from apps/dashboard/.env.local) and sends the dashboard's own Origin, as the browser does.
+
+import { existsSync, readFileSync } from 'node:fs';
 
 const DASHBOARD = process.env.DASHBOARD_URL ?? 'http://localhost:3000';
 const GATEWAY = process.env.GATEWAY_URL ?? 'http://localhost:4000';
@@ -30,10 +34,29 @@ const STEPS = [
   ['unknown merchant', 'http://localhost:4199/premium-summary', 'GET', 'fetch_report'],
 ];
 
+function dashboardPassword() {
+  if (process.env.DASHBOARD_PASSWORD) return process.env.DASHBOARD_PASSWORD;
+  const envFile = new URL('../.env.local', import.meta.url);
+  if (!existsSync(envFile)) return '';
+  const match = readFileSync(envFile, 'utf8').match(/^DASHBOARD_PASSWORD=(.*)$/m);
+  return match ? match[1].trim() : '';
+}
+
+// Returns the session cookie the dashboard sets on sign-in.
+async function signIn() {
+  const res = await fetch(`${DASHBOARD}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: DASHBOARD },
+    body: JSON.stringify({ password: dashboardPassword() }),
+  });
+  if (!res.ok) throw new Error(`dashboard sign-in failed: ${res.status} ${await res.text()}`);
+  return res.headers.get('set-cookie').split(';')[0];
+}
+
 async function createMandate() {
   const res = await fetch(`${DASHBOARD}/api/mandates`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: DASHBOARD, Cookie: await signIn() },
     body: JSON.stringify({
       agent_id: 'agt_pricing',
       task: 'Compile current list prices for Acme and Globex for the Q4 pricing review.',
