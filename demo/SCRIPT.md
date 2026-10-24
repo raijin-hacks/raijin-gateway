@@ -143,11 +143,11 @@ Don't add anything about endpoints or totals.
 
 ### 6 · Results (1:55–2:10)
 
-Switch to the results tab. Read the numbers from `eval/supplemental/v1.3-v1/results/live-*.md`, from the latest `pnpm eval:v13:live`. Until that has run, the live judge is **unmeasured**: say so, and use only the offline facts.
+Switch to the results tab. Read the numbers from `eval/supplemental/v1.3-v1/results/live-2026-10-24T22-41-46.816Z.md` (or a newer `pnpm eval:v13:live` if one exists). These are mock-payment runs, not chain settlements. Labels are **not** independently reviewed.
 
-> "We test the judge on matched pairs: the same purchase twice, where only the human's task changes. [LIVE: X of 6] off-task twins stopped, [LIVE: Y of 6] legitimate twins approved, over three repetitions. Our boundary probes covered unselected merchants, unknown routes, and a human approval after the merchant was removed. All four denied with zero judge calls and zero payments. The variant attacks were written by a teammate who never saw the judge's prompt."
+> "Same purchase, two tasks. Live sonnet 4.5, three runs: all six off-task twins stopped. Six of six legit in two runs; the first run had one judge error on the export, not a wrong no. A rules-only baseline still lets five off-task buys through and blocks that export. Four boundary probes never reached the judge. Labels are not independently reviewed."
 
-If the numbers missed the targets, say the real ones. Honest numbers beat perfect ones. Don't call the labels independently reviewed: that sign-off is still pending.
+If a newer live file disagrees, say the new numbers. Honest numbers beat perfect ones. Don't call the labels independently reviewed. Don't call this plan-lock.
 
 ### 7 · Live attack (2:10–2:25)
 
