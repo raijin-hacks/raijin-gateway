@@ -29,6 +29,7 @@ export function createTokenClient(
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('INVALID_MANDATE_TOKEN');
 
   async function request(path: string, init: RequestInit = {}): Promise<unknown> {
+    let conflict = false;
     try {
       const response = await transport(gatewayOrigin + path, {
         ...init,
@@ -40,6 +41,12 @@ export function createTokenClient(
         redirect: 'error',
         signal: AbortSignal.timeout(5000),
       });
+      // 409 on /pay means this key is bound to a different request. Retrying cannot fix that,
+      // and minting a new key would risk a second purchase, so callers must stop.
+      if (response.status === 409) {
+        conflict = true;
+        await response.body?.cancel();
+      }
       if (!response.ok) throw new Error('GATEWAY_REJECTED');
       const reader = response.body?.getReader();
       const chunks: Uint8Array[] = [];
@@ -58,7 +65,7 @@ export function createTokenClient(
       return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
     } catch {
       // Never propagate transport exceptions, response bodies, bearer values or URLs.
-      throw new Error('GATEWAY_REQUEST_FAILED');
+      throw new Error(conflict ? 'GATEWAY_CONFLICT' : 'GATEWAY_REQUEST_FAILED');
     }
   }
   return Object.freeze({

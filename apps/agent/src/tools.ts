@@ -6,6 +6,7 @@ import {
   type PaymentState,
 } from '@apf/contracts';
 import { createTokenClient } from './gateway.js';
+import type { Journal } from './journal.js';
 
 export const OUTPUT_BYTES = 16000;
 export function boundedText(value: string, secrets: string[] = [], limit = OUTPUT_BYTES) {
@@ -53,12 +54,35 @@ export function createTools(options: {
   token: string;
   transport?: typeof fetch;
   trace?: Trace;
+  /** Durable intents (A19). Without one, purchase identity lasts only for this process. */
+  journal?: Journal;
 }) {
   const transport = options.transport ?? fetch;
   const client = createTokenClient(options.gateway, options.token, transport);
   const trace = options.trace ?? (() => {});
   const purchases = new Map<string, PayRequest>();
-  return Object.freeze({
+
+  /** The one request to send for these arguments: journaled first, so a key exists on disk
+   * before any POST /pay. Identical arguments always map to the same key. */
+  function durableRequest(value: Purchase): PayRequest {
+    const intent = PayRequestSchema.omit({ idempotency_key: true }).parse(value);
+    if (options.journal) return options.journal.intent(options.token, intent);
+    const identity = JSON.stringify([
+      intent.url,
+      intent.method,
+      intent.expected_price,
+      intent.purpose,
+    ]);
+    let request = purchases.get(identity);
+    if (!request) {
+      if (purchases.size >= 32) throw new Error('PURCHASE_LIMIT');
+      request = PayRequestSchema.parse({ ...intent, idempotency_key: randomUUID() });
+      purchases.set(identity, request);
+    }
+    return request;
+  }
+
+  const tools = Object.freeze({
     async fetch_url(raw: string): Promise<string> {
       try {
         const deadline = AbortSignal.timeout(5000);
@@ -111,20 +135,8 @@ export function createTools(options: {
       }
     },
     async paid_fetch(value: Purchase) {
-      const parsed = PayRequestSchema.parse({ ...value, idempotency_key: randomUUID() });
-      // Exact repeated tool arguments represent a retry for this agent session.
-      const identity = JSON.stringify([
-        parsed.url,
-        parsed.method,
-        parsed.expected_price,
-        parsed.purpose,
-      ]);
-      let request = purchases.get(identity);
-      if (!request) {
-        if (purchases.size >= 32) throw new Error('PURCHASE_LIMIT');
-        request = parsed;
-        purchases.set(identity, request);
-      }
+      // Exact repeated tool arguments represent a retry, in this process or after a restart.
+      const request = durableRequest(value);
       const started = performance.now();
       const remaining = () => Math.max(1, 15000 - (performance.now() - started));
       async function bounded<T>(work: Promise<T>): Promise<T> {
@@ -173,12 +185,47 @@ export function createTools(options: {
             }
           }
           return workerOutput(response, request.url, state, options.token);
-        } catch {
+        } catch (error) {
+          if (error instanceof Error && error.message === 'GATEWAY_CONFLICT') {
+            // The key is bound to another request. Never retry with a fresh key.
+            trace('payment: idempotency conflict; not retried');
+            throw new Error('PAYMENT_CONFLICT', { cause: error });
+          }
           trace('payment: retrying same purchase');
         }
       }
       trace('payment: unresolved; retain purchase identity');
       throw new Error('PAYMENT_UNRESOLVED');
     },
+    /**
+     * After a restart: settle every journaled intent for this mandate by replaying its exact
+     * request and key. The gateway returns the existing outcome; nothing new is purchased.
+     */
+    async resume() {
+      if (!options.journal) return [];
+      const outcomes = [];
+      for (const request of options.journal.pending(options.token)) {
+        const purchase: Purchase = {
+          url: request.url,
+          method: request.method,
+          expected_price: request.expected_price,
+          purpose: request.purpose,
+        };
+        try {
+          outcomes.push({ ok: true as const, output: await tools.paid_fetch(purchase) });
+        } catch (error) {
+          outcomes.push({
+            ok: false as const,
+            error:
+              error instanceof Error && error.message === 'PAYMENT_CONFLICT'
+                ? 'PAYMENT_CONFLICT'
+                : 'PAYMENT_UNRESOLVED',
+          });
+        }
+      }
+      trace(`resume: ${outcomes.length} journaled purchase(s) replayed`);
+      return outcomes;
+    },
   });
+  return tools;
 }
