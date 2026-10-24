@@ -24,3 +24,6 @@ coverage/
 design-docs/local/
 
 .DS_Store
+
+# Demo agent purchase journal (A19); holds no secrets but is per-machine state.
+.agent-state/
