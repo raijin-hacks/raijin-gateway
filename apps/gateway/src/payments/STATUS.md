@@ -250,3 +250,10 @@ Script: `pnpm --filter @apf/gateway payments:cdp-spike admin` then `... runtime`
 - Bypassed application check (live): the gateway's CDP adapter, called directly with `pay()`'s checks skipped, asked to sign 500000 to the attacker → `403 policy_violation`.
 - Facilitator: public x402.org test facilitator (not CDP's). Merchant: exact-loopback demo exception, synthetic content.
 - Not claimed: the CDP policy doesn't know HTTP endpoints, subjects, plans or cumulative totals; it caps each signature's payee, value, token and type.
+
+## 2026-10-24 · Live dropped reply + restart (CDP signer, real chain)
+- PriceScope from `chunk1/p6-control`, mode `drop_after_settle` (settles, then destroys the socket before the body).
+- `/pay` → `payment_unknown` for `pay_01M5QR1KAES640R6F99HH6RQVZ` (1.6 s). The reconciler's loop found the settlement within seconds: tx `0xbd4d056668fc5f4120a716d16bde95acca62bdda72e4cc2903f952477cd64675`, block 49751035, `AuthorizationUsed` by CDP account `0x432D…Fe5B`, `Transfer 0x432D… → 0x0d97… 10000`, stored nonce used.
+- Gateway stopped and restarted on the same database; same-key retry → `approved`, same payment id, 35 ms, `response: null` (the merchant never sent a body, so there was none to save). Ledger: 3 payment rows in total (no new one), spent 30000, reserved 0.
+- Found on the way: PriceScope bound only `127.0.0.1`, while the pinned transport connected to `::1` (first answer for `localhost`), so quotes failed closed with `QUOTE_FAILED`. PriceScope now serves both loopback addresses.
+- Delayed proof as a separate live case (payment held `UNKNOWN`, then settled) is covered by the recovery tests with injected timing; here the reconciler found the proof within seconds.
