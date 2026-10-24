@@ -114,6 +114,46 @@ export const ApprovalRequestSchema = z.strictObject({
   issue_grant: z.boolean(),
 });
 
+// ---------- Operator dashboard reads (section 2) ----------
+
+export const AgentSummarySchema = z.strictObject({
+  id: prefixedId('agt'),
+  name: z.string().min(1),
+  role: z.string().min(1),
+  trust: z.number(),
+});
+
+export const AgentsResponseSchema = z.array(AgentSummarySchema);
+
+export const ApprovalsQuerySchema = z.strictObject({ status: z.literal('pending') });
+
+export const PendingApprovalSchema = z.strictObject({
+  decision_id: prefixedId('dec'),
+  mandate_id: prefixedId('mnd'),
+  task: z.string().min(1),
+  agent: z.strictObject({
+    id: prefixedId('agt'),
+    name: z.string().min(1),
+    role: z.string().min(1),
+  }),
+  merchant: z.strictObject({ id: prefixedId('mer'), name: z.string().min(1) }).nullable(),
+  endpoint: z
+    .strictObject({
+      id: prefixedId('end'),
+      method: HttpMethodSchema,
+      path: z.string().startsWith('/'),
+    })
+    .nullable(),
+  canonical_url: z.string().min(1),
+  price: Money.nullable(),
+  reasons: z.array(ReasonCodeSchema),
+  judge_explanation: z.string().nullable(),
+  stage: StageSchema,
+  deadline: EpochMs,
+});
+
+export const PendingApprovalsResponseSchema = z.array(PendingApprovalSchema);
+
 // ---------- Catalog (section 3) ----------
 
 const ParamIn = z.enum(['path', 'query']);

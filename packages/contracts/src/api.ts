@@ -1,5 +1,35 @@
 // Request and response bodies from the final_contracts.md section 2 endpoint table.
-import type { Address, Money, PayResponse, PaymentState } from './types.js';
+import type { Address, Money, PayResponse, PaymentState, ReasonCode, Stage } from './types.js';
+
+/** `GET /agents` (admin). Trust is the persistent agent-level score, not a session score. */
+export interface AgentSummary {
+  id: string;
+  name: string;
+  role: string;
+  trust: number;
+}
+
+/** `GET /agents` response. */
+export type AgentsResponse = AgentSummary[];
+
+/** One durable human review returned by `GET /approvals?status=pending` (admin). */
+export interface PendingApproval {
+  decision_id: string;
+  mandate_id: string;
+  task: string;
+  agent: Pick<AgentSummary, 'id' | 'name' | 'role'>;
+  merchant: { id: string; name: string } | null;
+  endpoint: { id: string; method: 'GET' | 'POST'; path: string } | null;
+  canonical_url: string;
+  price: Money | null;
+  reasons: ReasonCode[];
+  judge_explanation: string | null;
+  stage: Stage;
+  deadline: number;
+}
+
+/** `GET /approvals?status=pending` response. */
+export type PendingApprovalsResponse = PendingApproval[];
 
 /** `POST /mandates` (admin). */
 export interface CreateMandateRequest {
