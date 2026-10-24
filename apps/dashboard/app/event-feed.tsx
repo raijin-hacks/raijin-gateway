@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { StreamEvent } from "../lib/contracts";
-import { startMockStream } from "../lib/mock-stream";
 import { formatMoney } from "../lib/money";
 
 const MAX_EVENTS = 500;
@@ -11,11 +10,14 @@ export default function EventFeed() {
   const [events, setEvents] = useState<StreamEvent[]>([]);
 
   useEffect(() => {
-    const stop = startMockStream((event) => {
+    // Our own route; it proxies the gateway or sends mock events when MOCK=1
+    const source = new EventSource("/api/stream");
+    source.onmessage = (message) => {
+      const event: StreamEvent = JSON.parse(message.data);
       // newest first, keep at most 500
       setEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
-    });
-    return stop; // stop the stream when the page closes
+    };
+    return () => source.close(); // stop the stream when the page closes
   }, []);
 
   return (

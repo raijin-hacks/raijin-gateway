@@ -4,8 +4,9 @@ import type { StreamEvent } from "./contracts";
 type EventTemplate = (now: number) => StreamEvent;
 
 const SCRIPT: EventTemplate[] = [
-  // A few routine purchases approved by an existing grant
+  // A few routine purchases approved by an existing grant; the session is at the role baseline of 70
   (now) => ({ type: "decision", decision_id: "dec_001", mandate_id: "mnd_pricing", stage: "tier1", outcome: "approved", reasons: ["GRANT_HIT"], price: 10000, latency_ms: 3, at: now }),
+  (now) => ({ type: "trust", session_id: "ses_001", agent_id: "agt_research", session_trust: 70, agent_trust: 70, cause: "APPROVED", at: now }),
   (now) => ({ type: "payment", payment_id: "pay_001", state: "SUBMITTED", amount: 10000, at: now }),
   (now) => ({ type: "payment", payment_id: "pay_001", state: "SETTLED", amount: 10000, at: now }),
   (now) => ({ type: "decision", decision_id: "dec_002", mandate_id: "mnd_pricing", stage: "tier1", outcome: "approved", reasons: ["GRANT_HIT"], price: 10000, latency_ms: 2, at: now }),
@@ -20,7 +21,7 @@ const SCRIPT: EventTemplate[] = [
   // Blocked before contacting anyone: wrong company
   (now) => ({ type: "decision", decision_id: "dec_005", mandate_id: "mnd_pricing", stage: "precontact", outcome: "denied", reasons: ["SUBJECT_NOT_IN_MANDATE"], price: null, latency_ms: 1, at: now }),
 
-  // Trust drops after an off-task attempt
+  // Trust drops from 70 to 40 after off-task attempts
   (now) => ({ type: "trust", session_id: "ses_001", agent_id: "agt_research", session_trust: 55, agent_trust: 67, cause: "JUDGE_OFF_TASK", at: now }),
   (now) => ({ type: "trust", session_id: "ses_001", agent_id: "agt_research", session_trust: 40, agent_trust: 64, cause: "JUDGE_OFF_TASK", at: now }),
 ];
