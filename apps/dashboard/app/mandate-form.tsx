@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { AgentSummary } from '@apf/contracts';
 import { rememberMandateTask } from '../lib/mandate-tasks';
 import { dollarsToAtomic } from '../lib/money';
 
-type Agent = { id: string; name: string };
 type Merchant = { id: string; name: string; category: string };
 
 export default function MandateForm() {
   // Options loaded from our API routes
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
 
   // What the human types
@@ -31,11 +31,12 @@ export default function MandateForm() {
   // Load agents and merchants once when the form appears
   useEffect(() => {
     fetch('/api/agents')
-      .then((r) => r.json())
-      .then((list: Agent[]) => {
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`agents ${r.status}`))))
+      .then((list: AgentSummary[]) => {
         setAgents(list);
         if (list.length > 0) setAgentId(list[0].id);
-      });
+      })
+      .catch(() => setError('Could not load agents. Is the gateway running?'));
     fetch('/api/catalog')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`catalog ${r.status}`))))
       .then((c) => setMerchants(c.merchants))
@@ -113,10 +114,11 @@ export default function MandateForm() {
         <select className={input} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
           {agents.map((a) => (
             <option key={a.id} value={a.id} className="text-black">
-              {a.name}
+              {a.name} · {a.role} · trust {Math.round(a.trust)}
             </option>
           ))}
         </select>
+        <AgentTrustNote trust={agents.find((a) => a.id === agentId)?.trust} />
       </label>
 
       <label className="block">
@@ -247,4 +249,17 @@ export default function MandateForm() {
       )}
     </form>
   );
+}
+
+// A new mandate's session starts at the agent's trust, so a low agent score changes what it can buy.
+// Thresholds from final_contracts.md section 2, pipeline step 7.
+function AgentTrustNote({ trust }: { trust: number | undefined }) {
+  if (trust === undefined || trust >= 60) return null;
+  const text =
+    trust < 20
+      ? 'Quarantined: every payment under a new mandate for this agent will be denied.'
+      : trust < 40
+        ? 'Low trust: every payment will need a human.'
+        : 'Reduced trust: grants are ignored, so every new payment goes to the judge.';
+  return <p className={`mt-1 text-sm ${trust < 20 ? 'text-red-400' : 'text-amber-400'}`}>{text}</p>;
 }

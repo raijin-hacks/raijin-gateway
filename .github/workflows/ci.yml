@@ -108,6 +108,9 @@ jobs:
       - name: Build
         if: needs.inspect.outputs.build == 'true'
         run: pnpm run build
+      # The root build (tsc -b) doesn't cover the Next.js dashboard; build it explicitly.
+      - name: Build dashboard
+        run: pnpm run build:dashboard
 
 # CD PLACEHOLDER: docs/Design.md specifies a local demo and only tentative Azure hosting.
 # Add deployment after a host, build artifact, environment, and credentials are defined.
