@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PendingApproval, StreamEvent } from '@apf/contracts';
 import { mandateTask } from '../lib/mandate-tasks';
 import { formatMoney } from '../lib/money';
+import { markReviewed } from '../lib/reviewed';
 import { subscribe } from '../lib/stream';
 
 // One queue entry. With a gateway, every field comes from GET /approvals; in MOCK mode the
@@ -61,7 +62,10 @@ export default function ApprovalQueue() {
       if (stopped || !res || !res.ok) return;
       const list: PendingApproval[] | null = await res.json();
       fromServer.current = list !== null; // the route answers null in MOCK mode
-      if (list) setQueue(list.map(fromGateway));
+      if (list) {
+        for (const a of list) markReviewed(a.decision_id); // so the feed marks their final rows
+        setQueue(list.map(fromGateway));
+      }
     }
 
     // Several events usually arrive together; reload once after they settle.

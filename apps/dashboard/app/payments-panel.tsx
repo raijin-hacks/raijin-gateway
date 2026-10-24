@@ -23,8 +23,12 @@ const STATE_COLOR: Record<PaymentState, string> = {
   SUBMITTED: 'text-amber-400',
   UNKNOWN: 'text-amber-400',
   SETTLED: 'text-green-400',
-  FAILED: 'text-red-400',
+  FAILED: 'text-gray-400', // not an error: see STATE_LABEL
 };
+
+// FAILED means the payment was proven not to settle and its reserved money was released. Shown as
+// "released" so it doesn't read as a crash; the raw state stays in the tooltip.
+const STATE_LABEL: Partial<Record<PaymentState, string>> = { FAILED: 'released · nothing paid' };
 
 // Payments since the page loaded, newest first: one row per payment, updated in place as its
 // state moves. The stream gives state and amount; the payee and tx hash come from the gateway.
@@ -104,7 +108,16 @@ export default function PaymentsPanel() {
                     {new Date(r.at).toLocaleTimeString()}
                   </td>
                   <td className="pr-3 font-mono whitespace-nowrap">{r.paymentId}</td>
-                  <td className={`pr-3 font-semibold ${STATE_COLOR[r.state]}`}>{r.state}</td>
+                  <td
+                    className={`pr-3 font-semibold whitespace-nowrap ${STATE_COLOR[r.state]}`}
+                    title={
+                      r.state === 'FAILED'
+                        ? 'Payment state FAILED: it never settled, and the money reserved for it was released.'
+                        : undefined
+                    }
+                  >
+                    {STATE_LABEL[r.state] ?? r.state}
+                  </td>
                   <td className="pr-3 text-right font-mono">{formatMoney(r.amount)}</td>
                   <td className="pr-3 font-mono">{r.payee ? shorten(r.payee) : '—'}</td>
                   <td className="font-mono">
