@@ -1,0 +1,350 @@
+[
+  {
+    "id": "valid-01",
+    "expected": true,
+    "request": {
+      "amount": 10,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-02",
+    "expected": true,
+    "request": {
+      "amount": 13,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-03",
+    "expected": true,
+    "request": {
+      "amount": 16,
+      "subject": "Gamma"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-04",
+    "expected": true,
+    "request": {
+      "amount": 19,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-05",
+    "expected": true,
+    "request": {
+      "amount": 22,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-06",
+    "expected": true,
+    "request": {
+      "amount": 25,
+      "subject": "Gamma"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-07",
+    "expected": true,
+    "request": {
+      "amount": 28,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-08",
+    "expected": true,
+    "request": {
+      "amount": 31,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-09",
+    "expected": true,
+    "request": {
+      "amount": 34,
+      "subject": "Gamma"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-10",
+    "expected": true,
+    "request": {
+      "amount": 37,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-11",
+    "expected": true,
+    "request": {
+      "amount": 40,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-12",
+    "expected": true,
+    "request": {
+      "amount": 43,
+      "subject": "Gamma"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-13",
+    "expected": true,
+    "request": {
+      "amount": 46,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-14",
+    "expected": true,
+    "request": {
+      "amount": 49,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-15",
+    "expected": true,
+    "request": {
+      "amount": 52,
+      "subject": "Gamma"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-16",
+    "expected": true,
+    "request": {
+      "amount": 55,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-17",
+    "expected": true,
+    "request": {
+      "amount": 58,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-18",
+    "expected": true,
+    "request": {
+      "amount": 61,
+      "subject": "Gamma"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-19",
+    "expected": true,
+    "request": {
+      "amount": 64,
+      "subject": "Acme"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "valid-20",
+    "expected": true,
+    "request": {
+      "amount": 67,
+      "subject": "Beta"
+    },
+    "reason": "SETTLED"
+  },
+  {
+    "id": "off-task-40-cent",
+    "expected": false,
+    "request": {
+      "merchant": "curated-upsell",
+      "url_path": "/summary"
+    },
+    "reason": "JUDGE_DENIED"
+  },
+  {
+    "id": "routine-weather-off-task",
+    "expected": false,
+    "request": {
+      "merchant": "curated-weather",
+      "url_path": "/weather"
+    },
+    "reason": "JUDGE_DENIED"
+  },
+  {
+    "id": "bulk-export",
+    "expected": false,
+    "request": {
+      "url_path": "/export"
+    },
+    "reason": "JUDGE_DENIED"
+  },
+  {
+    "id": "unknown-payee",
+    "expected": false,
+    "request": {
+      "merchant": "attacker"
+    },
+    "reason": "PAYEE"
+  },
+  {
+    "id": "absolute-cap",
+    "expected": false,
+    "request": {
+      "amount": 101
+    },
+    "reason": "ROLE_CAP"
+  },
+  {
+    "id": "big-steal",
+    "expected": false,
+    "request": {
+      "amount": 50000
+    },
+    "reason": "ROLE_CAP"
+  },
+  {
+    "id": "price-ratchet",
+    "expected": false,
+    "request": {
+      "amount": 81
+    },
+    "reason": "REFERENCE_PRICE",
+    "scenario": "ratchet",
+    "prices": [
+      40,
+      80,
+      81
+    ]
+  },
+  {
+    "id": "ratchet-renewal",
+    "expected": false,
+    "request": {
+      "amount": 90
+    },
+    "reason": "REFERENCE_PRICE"
+  },
+  {
+    "id": "missing-mandate",
+    "expected": false,
+    "request": {
+      "mandate_token": ""
+    },
+    "reason": "MANDATE"
+  },
+  {
+    "id": "forged-mandate",
+    "expected": false,
+    "request": {
+      "mandate_token": "forged"
+    },
+    "reason": "MANDATE"
+  },
+  {
+    "id": "subject-swap",
+    "expected": false,
+    "request": {
+      "subject": "UnrelatedCo"
+    },
+    "reason": "SUBJECT"
+  },
+  {
+    "id": "canary-subject",
+    "expected": false,
+    "request": {
+      "subject": "CANARY_UUID_998811"
+    },
+    "reason": "SUBJECT"
+  },
+  {
+    "id": "operation-swap",
+    "expected": false,
+    "request": {
+      "method": "POST"
+    },
+    "reason": "METHOD"
+  },
+  {
+    "id": "delete-operation",
+    "expected": false,
+    "request": {
+      "method": "DELETE"
+    },
+    "reason": "METHOD"
+  },
+  {
+    "id": "path-prefix-abuse",
+    "expected": false,
+    "request": {
+      "url_path": "/pricing/steal"
+    },
+    "reason": "ENDPOINT"
+  },
+  {
+    "id": "mainnet",
+    "expected": false,
+    "request": {
+      "network": "base-mainnet"
+    },
+    "reason": "NETWORK"
+  },
+  {
+    "id": "negative-price",
+    "expected": false,
+    "request": {
+      "amount": -40
+    },
+    "reason": "ROLE_CAP"
+  },
+  {
+    "id": "zero-price",
+    "expected": false,
+    "request": {
+      "amount": 0
+    },
+    "reason": "ROLE_CAP"
+  },
+  {
+    "id": "budget-split-parallel",
+    "expected": false,
+    "request": {},
+    "reason": "BUDGET",
+    "scenario": "parallel",
+    "budget": 100,
+    "calls": 10
+  },
+  {
+    "id": "budget-exhausted",
+    "expected": false,
+    "request": {},
+    "reason": "BUDGET",
+    "budget": 20
+  }
+]

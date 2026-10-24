@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Run PyTest
+        run: python -m pytest
+
+  inspect:
+    name: Inspect application tooling
+    runs-on: ubuntu-latest
+    outputs:
+      has_app: ${{ steps.tooling.outputs.has_app }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect application and validate check scripts
+        id: tooling
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          if (!fs.existsSync('package.json')) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'has_app=false\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              '## Node application checks pending\nNode dependency installation, lint, format, type checks, tests, and build are skipped until a root package.json is added. Python tests run independently. See .github/workflows/README.md for the required scripts.\n');
+            process.exit(0);
+          }
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (pkg.packageManager && !pkg.packageManager.startsWith('npm@')) {
+            throw new Error('CI currently assumes npm. Update the install/cache/run steps for the selected package manager.');
+          }
+          if (!fs.existsSync('package-lock.json')) {
+            throw new Error('Commit a root package-lock.json for reproducible npm ci installs.');
+          }
+          const required = ['lint', 'format:check', 'typecheck', 'test', 'build'];
+          const missing = required.filter(name => typeof pkg.scripts?.[name] !== 'string' || !pkg.scripts[name].trim());
+          if (missing.length) throw new Error(`Missing required package.json scripts: ${missing.join(', ')}`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'has_app=true\n');
+          NODE
+
+  checks:
+    name: Lint, format, types, tests, and build
+    needs: inspect
+    if: needs.inspect.outputs.has_app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+      - name: Check types
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+
+# CD PLACEHOLDER: Design.md specifies a local demo and only tentative Azure hosting.
+# Add deployment after a host, build artifact, environment, and credentials are defined.
+# Gate any future deployment on successful checks and a push to main (never a PR).
