@@ -127,13 +127,13 @@ describe('reserve', () => {
     expect(reserve(2, tiny)).toEqual({ ok: false, code: 'TENANT_DAILY' });
   });
 
-  it('starts a fresh tenant total each UTC day', () => {
+  it('carries prior-day unresolved exposure into the next UTC day', () => {
     const { db, clock, reserve } = setup(20 * ONE_USDC);
     expect(reserve(DEMO.tenantDailyCap).ok).toBe(true);
     clock.advance(DAY_MS);
     const tomorrow = createMandate(db, clock, { budget: ONE_USDC });
-    expect(reserve(ONE_USDC, tomorrow).ok).toBe(true);
-    expect(tenantCommitted(db, clock)).toBe(ONE_USDC);
+    expect(reserve(ONE_USDC, tomorrow)).toEqual({ ok: false, code: 'TENANT_DAILY' });
+    expect(tenantCommitted(db, clock)).toBe(0);
   });
 
   it('gives released money back to the tenant total', async () => {

@@ -317,3 +317,45 @@ export const standingGrantUsage = sqliteTable(
     check('standing_grant_usage_used', sql`${t.used_total} >= 0`),
   ],
 );
+
+// Chunk 2-owned internal durable coordination; no expiring claims or cache tombstones.
+export const gatewaySecrets = sqliteTable('gateway_secrets', {
+  id: text().primaryKey(),
+  value: text().notNull(),
+});
+export const payWorkflows = sqliteTable(
+  'pay_workflows',
+  {
+    decision_id: text()
+      .primaryKey()
+      .references(() => decisions.id),
+    binding: text().notNull(),
+    state: text().notNull(),
+    owner: text().notNull(),
+    catalog_revision: text().notNull(),
+    request_json: text().notNull(),
+    quote_json: text(),
+    deadline: integer().notNull(),
+    response_json: text(),
+    reviewed_json: text().notNull(),
+    tier0_at: integer(),
+  },
+  (t) => [
+    check(
+      'pay_workflows_state',
+      sql`${t.state} IN ('PROCESSING','REVIEW','AUTHORIZED','UNKNOWN','TERMINAL')`,
+    ),
+  ],
+);
+
+// Immutable per-stage review history; approvals retains its contracted one-row summary.
+export const payReviewEvents = sqliteTable('pay_review_events', {
+  id: text().primaryKey(),
+  decision_id: text()
+    .notNull()
+    .references(() => decisions.id),
+  outcome: text().notNull(),
+  note: text().notNull(),
+  reasons_json: text().notNull(),
+  created_at: integer().notNull(),
+});
