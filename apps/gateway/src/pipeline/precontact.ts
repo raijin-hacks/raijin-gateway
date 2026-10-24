@@ -21,6 +21,10 @@ export function precontact(
   if (denylist.includes(new URL(route.canonical.url).hostname)) return 'DENYLIST';
   if (containsSecret(urlSecretFacts(route.canonical))) return 'SECRET_IN_URL';
   if ((rawUrl.split('#')[0]!.split('?')[1] ?? '').length > 256) return 'QUERY_TOO_LONG';
+  // Hard denials come before checks that only escalate: an unselected merchant must never reach
+  // human review because some other parameter also needed a look.
+  const allowedMerchants = JSON.parse(agent.mandate.allowed_merchants_json) as string[];
+  if (!allowedMerchants.includes(route.match.merchant.id)) return 'MERCHANT_NOT_SELECTED';
   if (route.match.params.some((p) => p.violation)) return 'PARAM_NOT_IN_SCHEMA';
   const subjects = JSON.parse(agent.mandate.subjects_json) as string[];
   if (
@@ -29,7 +33,5 @@ export function precontact(
     )
   )
     return 'SUBJECT_NOT_IN_MANDATE';
-  const allowedMerchants = JSON.parse(agent.mandate.allowed_merchants_json) as string[];
-  if (!allowedMerchants.includes(route.match.merchant.id)) return 'MERCHANT_NOT_SELECTED';
   return null;
 }

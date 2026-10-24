@@ -198,3 +198,23 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - Not yet done: one real Base Sepolia payment through the gateway in `PAYMENTS_MODE=real` (needs the wallet key in `.env`). This is the 6 PM checkpoint.
 - Peer verification is defensive; no test forces a mismatched peer.
 - A destination refused inside `pay()` happens after `markSubmitted`, so the payment goes `UNKNOWN` and the reconciler fails it after expiry (nothing was sent).
+
+## 2026-10-24 · Integrated settlement proof (branch `chunk1/settlement-proof`)
+
+**Proven (live, Base Sepolia, through the actual gateway)**
+- Setup: gateway in `PAYMENTS_MODE=real` with the J2b pinned transport, `JUDGE_MODE=stub-approve`, temp SQLite DB; PriceScope at `http://localhost:4101`. **This is the exact-loopback demo exception, not HTTPS evidence.** Facilitator: `https://x402.org/facilitator` (the public test facilitator, not CDP's). Signer: local key (`WALLET_PRIVATE_KEY`), payer `0x34be…a582`. Merchant content is synthetic fixture data.
+- Mandate `mnd_01M5QP2YJNX6YEHJEHHXHCDMFW` (agt_pricing, subject acme, PriceScope only) → `/pay` → `approved` at stage judge, decision `dec_01M5QP2YJYVV2KT42KGF2GF1XT`, payment `pay_01M5QP2YKFRAX7G2P1FBY2HS9V`, 1.8 s, with PriceScope's Acme body delivered.
+- Chain: tx `0xf37bcfdcd361ac3072299e4f15636b17a5ea47dfd36d515b76dd7474309abcb4`, block 49740769, status success. USDC logs show `AuthorizationUsed(0x34Be…, 0x7ab3…a7c4)` and `Transfer 0x34Be… → 0x0d97… 10000`. The stored nonce reads as used on-chain.
+- Ledger: payment `SETTLED` with that tx hash; mandate spent 10000, reserved 0; one payments row; saved response sha256 `498d541e…`.
+- Same-key replay: same decision and payment returned in 34 ms; still one payments row, spent 10000, same response hash, no new signature.
+- Forbidden destinations, live through `/pay`: uncataloged HTTPS host → `UNCATALOGED_ENDPOINT`; `169.254.169.254` → `BAD_URL`; uncataloged path → `UNCATALOGED_ENDPOINT`; all denied at pre-contact with no payment row.
+
+**Bug found and fixed (Chunk 2, pre-contact order)**
+- Live: an unselected merchant (SkyData) whose subject also wasn't in the mandate went to human review (`SUBJECT_NOT_IN_MANDATE`, escalate) instead of being denied `MERCHANT_NOT_SELECTED`. Hard denials now run before escalating checks. Regression test added; confirmed live afterwards (`denied MERCHANT_NOT_SELECTED precontact`).
+
+**Not yet proven live**
+- Dropped reply + restart and delayed proof on the real chain: these need a merchant failure mode (`/_control drop_after_settle`, P6). Covered by in-process tests with injected timing (Codex, `chunk1/recovery-tests`), labeled as simulated.
+
+## 2026-10-24 · CDP spike (in progress)
+- `@coinbase/cdp-sdk` pinned at 1.59.0 (1.60.0 is under the 7-day release-age rule). Script: `pnpm --filter @apf/gateway payments:cdp-spike`.
+- The runtime credentials work (CDP server account `0x432D…Fe5B` created) but lack `policies#manage`. That fits the plan's separation: policies will be created and attached by a separate admin key (`CDP_ADMIN_API_KEY_ID/SECRET`), and the spike checks that the runtime key can't edit or detach them. Blocked on that admin key.

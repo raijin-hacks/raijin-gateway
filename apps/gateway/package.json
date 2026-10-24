@@ -11,10 +11,12 @@
     "db:seed": "tsx --env-file-if-exists=../../.env src/db/seed-cli.ts",
     "payments:wallets": "tsx src/payments/scripts/gen-wallets.ts",
     "payments:balance": "tsx --env-file-if-exists=../../.env src/payments/scripts/balance.ts",
-    "payments:pay-once": "tsx --env-file-if-exists=../../.env src/payments/scripts/pay-once.ts"
+    "payments:pay-once": "tsx --env-file-if-exists=../../.env src/payments/scripts/pay-once.ts",
+    "payments:cdp-spike": "tsx --env-file-if-exists=../../.env src/payments/scripts/cdp-spike.ts"
   },
   "dependencies": {
     "@apf/contracts": "workspace:*",
+    "@coinbase/cdp-sdk": "1.59.0",
     "@hono/node-server": "2.1.5",
     "@x402/core": "2.28.0",
     "@x402/evm": "2.28.0",
