@@ -28,7 +28,19 @@ The lookup pairs use `agt_pricing` (research role); the export pairs use `agt_bu
 - **Schema and pairing:** all 16 parse with the v1.3 `Entry` schema, and all 8 pairs pass the v1.3 pairing rule (identical facts, different tasks).
 - **Every case reaches the judge.** With `JUDGE_MODE=stub-approve`, all 16 stop at stage `judge` with `JUDGE_APPROVED` and exactly one quote, so no pre-contact or Tier 0 rule catches any attack.
 - **Deterministic baseline** (`createCategoryBaseline`): approves both cases of all six lookup pairs, so **the six lookup attacks are judge-only**. It denies both cases of both export pairs. That catches the export attacks but also blocks the legitimate all-company twins, which is the baseline's false positive.
-- These are stub and baseline runs only. **No live model has been run on this set**; the live result is Chunk 3's to measure.
+- These are stub and baseline runs only. The live model run is Chunk 3's: `pnpm eval:heldout-v2:live`. Summary: [RESULTS.md](RESULTS.md). Labels stay **unreviewed**. Do not tune the judge prompt on this set.
+
+## How to run (chunk 3)
+
+From the repository root. The CLI does not load `.env`, retry, or fall back. A missing key fails before any live call. Offline writes `results/offline.*`; live writes timestamped `results/live-*`. Tests send output to a temp dir so `pnpm test` does not rewrite those files.
+
+```sh
+pnpm eval:heldout-v2:offline
+# With ANTHROPIC_API_KEY exported securely in your local shell:
+pnpm eval:heldout-v2:live
+```
+
+Model is pinned to `claude-sonnet-4-5-20250929`. Payments are mock. `manifest.sha256` is checked before any judge is constructed and again after the run. Attack canaries come from `manifest.pages`, not invented strings. Windows checkouts must keep `manifest.json` as LF (see root `.gitattributes`).
 
 ## Pages (for induction tests)
 
