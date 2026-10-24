@@ -23,7 +23,9 @@
     "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope",
     "paper": "node eval/paper/run.mjs",
     "eval:stub": "node --import tsx eval/api/cli.ts",
-    "eval:real": "node --import tsx eval/api/cli.ts --real"
+    "eval:real": "node --import tsx eval/api/cli.ts --real",
+    "agent:rehearse": "vitest run --project agent",
+    "agent:live": "node --import tsx apps/agent/src/live.ts"
   },
   "dependencies": {
     "@apf/contracts": "workspace:*",
