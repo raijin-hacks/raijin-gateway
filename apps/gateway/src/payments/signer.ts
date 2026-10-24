@@ -3,7 +3,6 @@
 //   local: a testnet private key held by the gateway (WALLET_PRIVATE_KEY).
 //   cdp:   a CDP server account. CDP enforces the account's attached policy on every signature
 //          (payee, amount, token, type), independently of this gateway's own checks.
-import { CdpClient } from '@coinbase/cdp-sdk';
 import { privateKeyToAccount } from 'viem/accounts';
 
 export interface TypedDataRequest {
@@ -50,6 +49,8 @@ export async function createCdpSigner({
   address,
   timeoutMs = 10_000,
 }: CdpSignerOptions): Promise<PaymentSigner> {
+  // Loaded here, not at the top: the SDK takes ~2 s to import, and only PAYMENT_SIGNER=cdp needs it.
+  const { CdpClient } = await import('@coinbase/cdp-sdk');
   const cdp = new CdpClient();
   const account = await cdp.evm.getAccount({ address });
   if (account.address.toLowerCase() !== address.toLowerCase()) {
