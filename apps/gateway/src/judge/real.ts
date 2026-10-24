@@ -24,7 +24,9 @@ async function readBounded(response: Response): Promise<unknown> {
   let size = 0;
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await reader.read().catch(() => {
+        throw new JudgeError('JUDGE_ERROR');
+      });
       if (done) break;
       size += value.byteLength;
       if (size > MAX_RESPONSE_BYTES) throw new JudgeError('JUDGE_INVALID_OUTPUT');
@@ -34,9 +36,10 @@ async function readBounded(response: Response): Promise<unknown> {
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-  } catch {
+  } catch (error) {
     // Do not await cancellation: an uncooperative stream must not hold the deadline.
     void reader.cancel().catch(() => undefined);
+    if (error instanceof JudgeError) throw error;
     throw new JudgeError('JUDGE_INVALID_OUTPUT');
   } finally { reader.releaseLock(); }
 }

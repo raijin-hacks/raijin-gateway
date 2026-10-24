@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { JudgeInput } from '@apf/contracts';
 import cases from './cases.json';
 import mandates from './mandates.json';
 import { runPaper } from './runner';
@@ -22,6 +23,23 @@ describe('paper scoring', () => {
   });
   it('reports a failed observed checkpoint instead of trusting expectations', async () => {
     const report = await runPaper(createStubJudge('stub-approve'), mandates, cases, 'real', 'test');
+    expect(report.checkpoint.status).toBe('failed');
+  });
+  it('cannot satisfy judge acceptance with a simulated interceptor catch', async () => {
+    const provider = { judge: vi.fn(async (input: JudgeInput) => {
+      const fixture = cases.find(c => c.route === 'judge' && JSON.stringify(c.input) === JSON.stringify(input))!;
+      return output(fixture.kind === 'off_task' && !['M8', 'M9'].includes(fixture.id) ? 'deny' : 'approve');
+    }) };
+    const report = await runPaper(createInjectedJudge(provider), mandates, cases, 'real', 'test');
+    expect(report.judge).toMatchObject({ off_task_total: 9, off_task_denied: 7, legitimate_total: 9 });
+    expect(report.paper_system_simulation.off_task_caught).toBe(8);
+    expect(report.checkpoint).toMatchObject({ status: 'failed', minimum_judge_off_task_caught: 8, maximum_judge_legitimate_denied: 1 });
+  });
+  it('rounds the revised legitimate denial threshold conservatively', async () => {
+    let count = 0;
+    const provider = { judge: vi.fn(async () => output(count++ < 2 ? 'deny' : 'escalate')) };
+    const report = await runPaper(createInjectedJudge(provider), mandates, cases, 'real', 'test');
+    expect(report.judge.legitimate_denied).toBe(2);
     expect(report.checkpoint.status).toBe('failed');
   });
   it('does not score failures as successful attack blocks or legitimate approvals', async () => {

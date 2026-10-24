@@ -1,12 +1,10 @@
 import { describe, it } from 'vitest';
 
 // Executable coverage inventory for design-docs/chunk3.md. These are TODOs,
-// not fake implementations: PR 1 and PR 2 have deterministic implementations; real checkpoint is unmeasured.
+// not fake implementations. Catalog load/canonicalize/match acceptance lives in
+// apps/gateway/src/catalog/*.test.ts; real judge checkpoint is still unmeasured.
 describe('chunk3 design acceptance awaiting production implementations', () => {
-  it.todo('J1: load baseline catalog; reject duplicate IDs, dangling grants, invalid specs and overlapping templates');
-  it.todo('J2: canonicalize hosts/ports/fragments/query sorting without network; reject userinfo, traversal, separators, malformed escapes and duplicate params');
-  it.todo('J2: match exact method/origin/segments and validate enum/int/bool/forbidden parameters');
-  it.todo('J2: intercept unknown host/route/method before quote contact or input building');
+  it.todo('J2 gateway integration: wire the tested routeMatch gate before quote/grant/input building for every unknown host/route/method');
   it.todo('J2b (gateway/transport): reject non-HTTPS, private/mapped addresses, mixed DNS answers, redirects and rebinding with zero contact/signatures');
   it.todo('J2c (gateway): bind UUID idempotency keys atomically; replay concurrent purchases, reject conflicts and recover durable payment identity');
   it.todo('J3: project real contexts with subject normalization and enum-only options; independently tamper every raw text/name/value/metadata/credential leaf and capture provider payload');
