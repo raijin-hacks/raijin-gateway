@@ -1,13 +1,30 @@
-# Demo script (2 minutes)
+# Demo script
 
 The whole demo is built around one moment: a $0.40 payment that passes every cap and payee rule is stopped because it doesn't serve the task.
 
-**Target:** 2:00. **Hard limit:** 2:15 (check D-demo). Speaker lines are in quotes. Everything else is a click or something to point at. Items marked **TBD** depend on the demo agent (J6) or on the eval report, so fill them in at the first rehearsal.
+**Target:** 2:30. **Hard limit:** 3:00 (the team plan's slot). Speaker lines are in quotes. Everything else is a click or something to point at. Items marked **TBD** depend on the demo agent or on the eval report, so fill them in at the first rehearsal.
+
+> **Status:** beats 1–5 still follow the original judge-centric story. When Chunk 2's purchase-plan lock passes the 6 PM gate, rewrite them around plan review, activation and an off-plan denial (see the team plan's three-minute demo). Beat 6 (CDP) and the evidence section below are current.
+
+## Pitch wording
+
+Cleared by Chunk 1 (`apps/gateway/src/payments/STATUS.md`, CDP sections):
+
+> "CDP independently rejects the prohibited signatures we demonstrate."
+
+Use that sentence as written. The rest of the team-plan pitch ("Claude proposes the purchase permissions. A human activates them. Our gateway enforces the exact operations and quantities…") is **conditional**: say it only if the plan lock passes its gate, and say "an operator prepares" instead of "Claude proposes" if drafting falls back to a manual plan.
+
+**Never say:**
+- that the payments use HTTPS. The merchant runs on `http://localhost:4101`, the exact-loopback demo exception;
+- that the CDP policy checks endpoints, subjects, plans or totals. It caps each signature's payee, value, token and type, and nothing else;
+- that "Coinbase caps everything even if our code is wrong."
 
 ## Before the slot
 
-- [ ] Gateway on `:4000` with `PAYMENTS_MODE=real` and `JUDGE_MODE=real`, starting from a fresh `gateway.db`.
-- [ ] Merchants on `:4101`–`:4103` and the attacker server on `:4199`, all in `normal` mode (`POST /_control {"mode":"normal"}`).
+- [ ] Gateway on `:4000` with `PAYMENTS_MODE=real`, `JUDGE_MODE=real`, `PAYMENT_SIGNER=cdp` and `CDP_SIGNER_ADDRESS=0x432D4cEA07086049E9c2125348285A01c084Fe5B`, starting from a fresh `gateway.db`.
+- [ ] The gateway's environment has only the CDP **runtime** credentials (`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`). The admin key (`CDP_ADMIN_API_KEY_*`) stays off the demo machine's gateway: it's what can edit or detach the policy.
+- [ ] The CDP account `0x432D…Fe5B` has test USDC. `pnpm payments:balance` checks the local-key payer, not this account, so check it on an explorer.
+- [ ] PriceScope on `:4101` in `normal` mode (`POST /_control {"mode":"normal"}`). It's the only merchant that exists; don't mention others.
 - [ ] Dashboard on `:3000`, with no `MOCK` in `apps/dashboard/.env.local`, and `ADMIN_TOKEN` and `GATEWAY_URL` set.
 - [ ] The dashboard was reloaded right before the slot, so the header stats start at zero.
 - [ ] Browser at 125% zoom with the dashboard full screen. The terminal for the demo agent is on the right third of the screen, with a large font.
@@ -31,8 +48,9 @@ The whole demo is built around one moment: a $0.40 payment that passes every cap
 | 3 | 0:30–0:50 | Normal work |
 | 4 | 0:50–1:00 | Warm-up attack |
 | 5 | 1:00–1:30 | Headline attack (A2) |
-| 6 | 1:30–1:45 | Results |
-| 7 | 1:45–2:00 | Live attack |
+| 6 | 1:30–1:55 | The signer refuses (CDP) |
+| 7 | 1:55–2:10 | Results |
+| 8 | 2:10–2:25 | Live attack |
 
 ### 1 · Hook (0:00–0:15)
 
@@ -73,7 +91,21 @@ The agent reads a page that asks it to buy a $0.40 "premium summary" from an unk
 
 > "Forty cents. Under every cap. A valid payee. No secrets in the URL. Every rule says yes, and that's why it reached the judge. The judge asks one question: would someone doing exactly this task need this purchase? No. Denied, before anything was signed. And the judge never read the attacker's page. It saw the task, a price and a merchant category, nothing an attacker wrote. The session's trust drops, so from now on even routine calls lose their shortcut."
 
-### 6 · Results (1:30–1:45)
+### 6 · The signer refuses (1:30–1:55)
+
+Switch to the terminal and run the bypass probe, which uses only the runtime credentials:
+
+```bash
+pnpm --filter @apf/gateway payments:cdp-spike bypass
+```
+
+It calls the gateway's own CDP signer adapter with the application checks in `pay()` skipped, and asks it to sign 0.50 USDC to the attacker. Point at the `403 policy_violation`.
+
+> "Suppose our gateway code had a bug and skipped every check. The signing key lives in Coinbase's CDP, under a policy we attached: only USDC transfers to this merchant, at most one cent each. CDP independently rejects the prohibited signatures we demonstrate. And our gateway can't loosen that policy: its key can sign but can't edit or detach it."
+
+Don't add anything about endpoints or totals. If asked, see "What does the CDP policy check?" below.
+
+### 7 · Results (1:55–2:10)
 
 Switch to the results tab.
 
@@ -81,7 +113,7 @@ Switch to the results tab.
 
 If the numbers missed the targets, say the real ones. Honest numbers beat perfect ones.
 
-### 7 · Live attack (1:45–2:00)
+### 8 · Live attack (2:10–2:25)
 
 Turn the keyboard toward the judges. **TBD:** how they inject. Planned: edit the text of an attacker page, or give the agent a URL to read, then rerun it.
 
@@ -94,6 +126,7 @@ While they type, keep **Decisions** and **Approval queue** visible. An escalatio
 | Problem | Do this |
 |---|---|
 | Facilitator slow or down | Switch to the local Base Sepolia replay (**TBD**, Chunk 1). Say so. |
+| CDP slow, down or refusing a legitimate payment | The gateway never falls back to the local key, so purchases fail closed. Play the recorded clip of beat 6 and the CDP-signed settlement, say it's recorded, and drop any live CDP claim. |
 | Model API down | Use the cached judge response for A1 only, and **say that it's cached**. |
 | Anything else breaks | Play the backup video from the current beat. Don't debug on stage. |
 | Dashboard shows nothing | Check `/api/stream` in a tab. 502 means the gateway is down. As a last resort, reload with `MOCK=1` and **say that it's a mock**. |
@@ -113,7 +146,16 @@ Yes. That's outside what a payment gateway can see, and we say so up front. The 
 It never reads attacker text. Every untrusted field becomes a number, a length, a fixed-list value or a catalog label first. Each attack fixture carries a unique canary string, and CI fails if any canary appears in a judge request. Show `eval/cases/variants/`: canaries in paths, parameter names, page text and merchant metadata.
 
 **How is this different from Coinbase's spending limits?**
-They answer *how much*. We answer *why*. We sit on top of caps, not instead of them, and Tier 0 is caps.
+We use them. The payment key is a CDP server account with a policy attached, and CDP refuses signatures outside it. But a signing policy only sees the signature: payee, amount, token, type. It can't tell a pricing lookup from a bulk export at the same merchant and price. The gateway decides that, before it ever asks CDP to sign.
+
+**What does the CDP policy check?**
+Each signature, on its own: it must be `signEvmTypedData` for a Base Sepolia USDC `TransferWithAuthorization`, to PriceScope's payee, for at most 10,000 (0.01 USDC). Every other signing route (`signEvmHash`, `signEvmMessage`, `signEvmTransaction`, `sendEvmTransaction`) is explicitly rejected. It does **not** check the HTTP endpoint, subjects, the plan or cumulative totals. Those are the gateway's job.
+
+**Couldn't someone just change the CDP policy?**
+Not with the gateway's key. Changing or detaching it needs the separate admin key, and the runtime key's attempts returned `403 Missing required scope: policies#manage`. Whoever holds the admin key, and CDP itself, are still trusted.
+
+**Is the merchant connection HTTPS?**
+No. The demo merchant runs on `http://localhost:4101` under an exact-loopback exception in the gateway's destination rules. We haven't demonstrated HTTPS.
 
 **What happens at a million calls?**
 Grants make the cost scale with the kinds of purchase, not the number of calls: a million calls to five endpoints under one mandate need about five judge calls. Load test: [LOADTEST: requests/s, judge-call rate, p50/p95]. At volume, on-chain settlement is the bottleneck, not the gateway.
@@ -123,6 +165,41 @@ Before grants warm up, a judge call can cost more than a $0.01 payment, and we a
 
 **Isn't the trust score made up?**
 Yes. It's a reasonable starting policy, not a validated model. It only ever tightens controls, and the judge never sees it, so it can't bias the decision.
+
+## Payment evidence (from Chunk 1's `STATUS.md`)
+
+Every payment below is real, on **Base Sepolia** (a test network; the USDC has no cash value). All used the public test facilitator `https://x402.org/facilitator`, not CDP's. The merchant is PriceScope on `http://localhost:4101` with synthetic fixture content.
+
+**CDP setup**
+- Server account: `0x432D4cEA07086049E9c2125348285A01c084Fe5B`
+- Policy: `60fd197c-c874-4b81-9497-aaf8968a66a1`, created and attached with the admin key; the gateway uses only the runtime key.
+
+**CDP probes (real CDP API, run with the runtime key only)**
+
+| Probe | Result |
+|---|---|
+| 0.01 USDC to PriceScope | signed |
+| value 10001 (just over 0.01 USDC) | 403 policy_violation |
+| payee = attacker | 403 policy_violation |
+| different verifying contract | 403 policy_violation |
+| type `Permit` | 403 policy_violation |
+| `signHash` of an over-cap transfer | 403 policy_violation |
+| `signMessage` | 403 policy_violation |
+| gateway's CDP adapter with `pay()` checks skipped, 0.50 USDC to the attacker | 403 policy_violation |
+| runtime key tries to loosen or detach the policy | 403 Missing required scope |
+
+**Settled transactions**
+
+| Signer | What | Transaction | Block |
+|---|---|---|---|
+| CDP account | Allowed purchase through the gateway (`pay_01M5QQP5…`), body delivered | `0x87d139ba2b14352fdfa5f9bd410a6eacfaa6eb0f872ba858d35b8fc26836e6da` | 49749161 |
+| CDP account | Dropped reply: `/pay` returned `payment_unknown`, the reconciler found the settlement, and a same-key retry after a restart returned the same payment | `0xbd4d056668fc5f4120a716d16bde95acca62bdda72e4cc2903f952477cd64675` | 49751035 |
+| Local key | Integrated proof through the gateway (`pay_01M5QP2Y…`); a same-key replay made no new signature | `0xf37bcfdcd361ac3072299e4f15636b17a5ea47dfd36d515b76dd7474309abcb4` | 49740769 |
+| Local key | First payment, standalone script before the gateway existed | `0xbcf31d3f420dfd6006701912e015e935078a899bbd0f5bc0aeabedc0a41abb15` | 49499677 |
+
+Label each one by its signer on screen. Only the CDP rows count as CDP evidence; the local-key rows prove settlement, not the CDP backstop.
+
+Explorer links: `https://sepolia.basescan.org/tx/<hash>` (has a bot check) or `https://base-sepolia.blockscout.com/tx/<hash>`.
 
 ## Rehearsal log
 
@@ -137,5 +214,5 @@ Record every run. The **Sat evening** checkpoint requires one full run on the re
 ## Backup video
 
 - Record by **Sat 11 PM**: one clean full run on the real system, screen plus voice.
-- Keep it under 2:15. Save it as `demo/backup.mp4`, or link it here if it's too large for git.
+- Keep it under 3:00. Save it as `demo/backup.mp4`, or link it here if it's too large for git.
 - Check that it plays offline on the demo laptop.
