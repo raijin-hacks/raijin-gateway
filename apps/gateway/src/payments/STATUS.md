@@ -242,3 +242,11 @@ Script: `pnpm --filter @apf/gateway payments:cdp-spike admin` then `... runtime`
 - Remaining trust: whoever holds the admin key, and CDP itself. The wallet secret is shared by both keys in this setup.
 
 **What the policy does NOT check:** HTTP endpoint, subjects, plan or cumulative totals. It is a per-signature cap on payee, value, token and type only.
+
+## 2026-10-24 · CDP signer integrated and proven through the gateway
+- Code: `payments/signer.ts` (`PAYMENT_SIGNER=cdp`, pinned `CDP_SIGNER_ADDRESS`); the default stays `local`. No fallback to `WALLET_PRIVATE_KEY`; a CDP refusal or timeout throws before anything is stored or sent.
+- Live allowed purchase, gateway in `PAYMENTS_MODE=real PAYMENT_SIGNER=cdp`: payment `pay_01M5QQP5GEAVG0G8XYV3GGR8KD`, decision `dec_01M5QQP5G8RT1NMJZG2K6TDVRM`, approved in 2.0 s with the body delivered. Chain: tx `0x87d139ba2b14352fdfa5f9bd410a6eacfaa6eb0f872ba858d35b8fc26836e6da`, block 49749161, success; `AuthorizationUsed` by CDP account `0x432D4cEA07086049E9c2125348285A01c084Fe5B` and `Transfer 0x432D… → 0x0d97… 10000`; stored nonce used on-chain. Ledger: `SETTLED`, mandate spent 20000 (two purchases), reserved 0.
+- Same-key replay: same payment in 31 ms; still 2 payment rows, spent 20000, no new signature.
+- Bypassed application check (live): the gateway's CDP adapter, called directly with `pay()`'s checks skipped, asked to sign 500000 to the attacker → `403 policy_violation`.
+- Facilitator: public x402.org test facilitator (not CDP's). Merchant: exact-loopback demo exception, synthetic content.
+- Not claimed: the CDP policy doesn't know HTTP endpoints, subjects, plans or cumulative totals; it caps each signature's payee, value, token and type.
