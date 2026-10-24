@@ -37,8 +37,9 @@ export default function MandateForm() {
         if (list.length > 0) setAgentId(list[0].id);
       });
     fetch('/api/catalog')
-      .then((r) => r.json())
-      .then((c) => setMerchants(c.merchants));
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`catalog ${r.status}`))))
+      .then((c) => setMerchants(c.merchants))
+      .catch(() => setError('Could not load merchants. Is the gateway running?'));
   }, []);
 
   function addSubject() {
@@ -76,9 +77,9 @@ export default function MandateForm() {
         budget: dollarsToAtomic(budget),
         expires_in_ms: minutes * 60 * 1000,
       }),
-    });
+    }).catch(() => null);
+    if (!res || !res.ok) return setError('Could not create the mandate.');
     const data = await res.json();
-    if (!res.ok) return setError('Could not create the mandate.');
     setNewToken({ mandateId: data.mandate_id, token: data.token });
     setCopied(false);
     setActive([{ id: data.mandate_id, task: task.trim() }, ...active]);
@@ -90,8 +91,8 @@ export default function MandateForm() {
   }
 
   async function closeMandate(id: string) {
-    const res = await fetch(`/api/mandates/${id}/close`, { method: 'POST' });
-    if (!res.ok) return setError(`Could not close ${id}.`);
+    const res = await fetch(`/api/mandates/${id}/close`, { method: 'POST' }).catch(() => null);
+    if (!res || !res.ok) return setError(`Could not close ${id}.`);
     setActive(active.filter((m) => m.id !== id));
   }
 

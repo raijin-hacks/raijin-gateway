@@ -42,7 +42,7 @@ Show the dashboard, empty.
 
 ### 2 · Mandate (0:15–0:30)
 
-1. In **New mandate**, pick **Research agent**, paste the task, and add the five subjects. Tick **PriceScope**. Budget `2.00`, expiry `30`.
+1. In **New mandate**, pick **Pricing researcher**, paste the task, and add the five subjects. Tick **PriceScope**. Budget `2.00`, expiry `30`.
 2. Click **Create mandate**.
 3. Point at the amber token box. Click **Copy**, then paste the token into the agent terminal and start the agent. **TBD:** the exact command, from J6.
 4. Click **Done, hide it**.

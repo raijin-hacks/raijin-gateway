@@ -1,4 +1,4 @@
-import type { StreamEvent } from './contracts';
+import type { StreamEvent } from '@apf/contracts';
 
 // One EventSource for the whole page, shared by every component that subscribes.
 type Listener = (events: StreamEvent[]) => void;
