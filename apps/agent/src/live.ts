@@ -1,4 +1,4 @@
-import { createTools } from './tools.js';
+import { boundedText, createTools } from './tools.js';
 import { runAgent, TOOL_DEFINITIONS, type Block } from './loop.js';
 
 // Model credentials belong to the host adapter only; the spending tools receive only the mandate token.
@@ -11,7 +11,7 @@ async function main() {
     token: MANDATE_TOKEN,
     trace: console.log,
   });
-  await runAgent(AGENT_TASK, tools, async (messages) => {
+  const answer = await runAgent(AGENT_TASK, tools, async (messages) => {
     console.log('agent: model step');
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -34,8 +34,14 @@ async function main() {
     if (!Array.isArray(body.content)) throw new Error('MODEL_FAILED');
     return body.content;
   });
+  console.log('agent: final answer');
+  console.log(boundedText(answer, [MANDATE_TOKEN, ANTHROPIC_API_KEY]));
 }
-main().catch(() => {
-  console.error('agent: failed (details redacted)');
+main().catch((error: unknown) => {
+  console.error(
+    error instanceof Error && error.message === 'AGENT_STEP_LIMIT'
+      ? 'agent: step limit reached; no final answer'
+      : 'agent: failed; no final answer (details redacted)',
+  );
   process.exitCode = 1;
 });
