@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { StreamEvent } from '../lib/contracts';
+import type { StreamEvent } from '@apf/contracts';
 import { formatMoney } from '../lib/money';
 import { subscribe } from '../lib/stream';
 

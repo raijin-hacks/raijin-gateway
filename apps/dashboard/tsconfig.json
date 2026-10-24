@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@apf/contracts": ["../../packages/contracts/src/index.ts"]
     }
   },
   "include": [

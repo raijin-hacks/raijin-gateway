@@ -1,6 +1,11 @@
-// MOCK: later this forwards to the gateway's POST /mandates with ADMIN_TOKEN.
+import type { CreateMandateRequest } from '@apf/contracts';
+import { isMock, postToGateway } from '../../../lib/gateway';
+
+// POST /mandates to the gateway, or a fake mandate when MOCK=1.
 export async function POST(request: Request) {
-  const body = await request.json();
+  const body: CreateMandateRequest = await request.json();
+  if (!isMock()) return postToGateway('/mandates', body); // the gateway validates the body
+
   const id = Math.random().toString(36).slice(2, 10);
   return Response.json({
     mandate_id: `mnd_${id}`,

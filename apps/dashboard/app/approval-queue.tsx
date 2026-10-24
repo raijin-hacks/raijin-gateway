@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { StreamEvent } from '../lib/contracts';
+import type { StreamEvent } from '@apf/contracts';
 import { mandateTask } from '../lib/mandate-tasks';
 import { formatMoney } from '../lib/money';
 import { subscribe } from '../lib/stream';

@@ -1,4 +1,4 @@
-import type { StreamEvent } from './contracts';
+import type { StreamEvent } from '@apf/contracts';
 
 // Each entry builds one fake event. `at` is filled in when it's sent.
 type EventTemplate = (now: number) => StreamEvent;
@@ -19,7 +19,7 @@ const SCRIPT: EventTemplate[] = [
   (now) => ({
     type: 'trust',
     session_id: 'ses_001',
-    agent_id: 'agt_research',
+    agent_id: 'agt_pricing',
     session_trust: 70,
     agent_trust: 70,
     cause: 'APPROVED',
@@ -89,7 +89,7 @@ const SCRIPT: EventTemplate[] = [
   (now) => ({
     type: 'trust',
     session_id: 'ses_001',
-    agent_id: 'agt_research',
+    agent_id: 'agt_pricing',
     session_trust: 55,
     agent_trust: 67,
     cause: 'JUDGE_OFF_TASK',
@@ -98,7 +98,7 @@ const SCRIPT: EventTemplate[] = [
   (now) => ({
     type: 'trust',
     session_id: 'ses_001',
-    agent_id: 'agt_research',
+    agent_id: 'agt_pricing',
     session_trust: 40,
     agent_trust: 64,
     cause: 'JUDGE_OFF_TASK',
