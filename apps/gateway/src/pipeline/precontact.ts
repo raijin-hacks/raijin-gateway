@@ -29,5 +29,7 @@ export function precontact(
     )
   )
     return 'SUBJECT_NOT_IN_MANDATE';
+  const allowedMerchants = JSON.parse(agent.mandate.allowed_merchants_json) as string[];
+  if (!allowedMerchants.includes(route.match.merchant.id)) return 'MERCHANT_NOT_SELECTED';
   return null;
 }

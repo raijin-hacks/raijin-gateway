@@ -72,11 +72,11 @@ describe('gateway composition boundary', () => {
     expect(judge.judge).not.toHaveBeenCalled();
   });
   it.each([
-    ['https://attacker.test/steal', 'GET', 'escalate'],
-    ['https://attacker.test/steal?secret=CANARY', 'GET', 'escalate'],
-    ['http://localhost:4101/unknown', 'GET', 'escalate'],
-    ['http://localhost:4101/unknown?secret=CANARY', 'GET', 'escalate'],
-    [url, 'DELETE', 'escalate'],
+    ['https://attacker.test/steal', 'GET', 'deny'],
+    ['https://attacker.test/steal?secret=CANARY', 'GET', 'deny'],
+    ['http://localhost:4101/unknown', 'GET', 'deny'],
+    ['http://localhost:4101/unknown?secret=CANARY', 'GET', 'deny'],
+    [url, 'DELETE', 'deny'],
     ['http://localhost:4199/steal', 'GET', 'deny'],
     ['https://merchant.test/a/../b', 'GET', 'deny'],
     [url + '&period=90d', 'GET', 'deny'],

@@ -195,7 +195,7 @@ it('never contacts a merchant or provider for a catalog-unknown route', async ()
     loadSuite().core.find((c) => c.id === 'M18')!,
     createStubJudge('stub-approve'),
   );
-  expect(result.outcome).toBe('escalate');
+  expect(result.outcome).toBe('deny');
   expect(result.reasons).toContain('UNCATALOGED_ENDPOINT');
   expect(result.quote_calls ?? 0).toBe(0);
   expect(result.payment_calls ?? 0).toBe(0);

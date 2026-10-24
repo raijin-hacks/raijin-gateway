@@ -71,7 +71,6 @@ describe('reason codes', () => {
         'SUBJECT_NOT_IN_MANDATE',
         'TRUST_REQUIRES_HUMAN',
         'UNKNOWN_WITH_PARAMS',
-        'UNCATALOGED_ENDPOINT',
       ].sort(),
     );
   });

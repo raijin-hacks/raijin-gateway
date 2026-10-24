@@ -20,6 +20,7 @@ import {
 } from '../../src/judge/index.js';
 import { getQuote as realGetQuote } from '../../src/payments/quote.js';
 import { createPaymentStore } from '../../src/db/payment-store.js';
+import type { Config } from '../../src/config.js';
 import { createMockPayments } from '../../src/mock-payments.js';
 import { createPipeline } from '../../src/pipeline/index.js';
 import { createHarness, ADMIN_TOKEN } from '../harness/app.js';
@@ -33,8 +34,11 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-async function fixture(judge: JudgeModule = createStubJudge('stub-approve')) {
-  const h = createHarness();
+async function fixture(
+  judge: JudgeModule = createStubJudge('stub-approve'),
+  config: Partial<Config> = {},
+) {
+  const h = createHarness(config);
   const catalog = loadCatalog(FIXTURE_CATALOG_PATH);
   const store = createPaymentStore(h.db, h.clock);
   const underlying = createMockPayments(store, catalog, h.clock);
@@ -133,9 +137,9 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
 
   it.each([
     ['http://localhost:4199/steal?x=hello', 'BAD_URL', 'denied'],
-    ['https://attacker.test/steal', 'UNCATALOGED_ENDPOINT', 'pending'],
-    ['https://attacker.test/steal?x=hello', 'UNCATALOGED_ENDPOINT', 'pending'],
-    ['http://localhost:4101/unknown', 'UNCATALOGED_ENDPOINT', 'pending'],
+    ['https://attacker.test/steal', 'UNCATALOGED_ENDPOINT', 'denied'],
+    ['https://attacker.test/steal?x=hello', 'UNCATALOGED_ENDPOINT', 'denied'],
+    ['http://localhost:4101/unknown', 'UNCATALOGED_ENDPOINT', 'denied'],
     ['http://localhost:4101/v1/pricing/other', 'SUBJECT_NOT_IN_MANDATE', 'pending'],
     [url + '&extra=hello', 'PARAM_NOT_IN_SCHEMA', 'pending'],
     [url + '&token=sk-secret', 'SECRET_IN_URL', 'denied'],
@@ -155,15 +159,42 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     expect(spy).not.toHaveBeenCalled();
     expect(h.payments.pay).not.toHaveBeenCalled();
     expect(h.money()).toEqual({ spent: 0, reserved: 0 });
+    expect(h.count('approvals')).toBe(0);
   });
 
-  it('human approval cannot bypass unknown-route admission', async () => {
+  it('denies unknown routes without creating a human review item', async () => {
     const h = await fixture();
     const first = await h.pay(h.purchase({ url: 'https://attacker.test/steal' }));
-    expect((await h.review(first.body.decision_id)).status).toBe(200);
-    expect(h.pipeline.replay(first.body.decision_id).status).toBe('pending');
+    expect(first.body).toMatchObject({ status: 'denied', stage: 'precontact' });
+    expect(first.body).toMatchObject({ explanation: 'add this endpoint to the catalog' });
+    expect(h.pipeline.replay(first.body.decision_id).status).toBe('denied');
     expect(h.payments.getQuote).not.toHaveBeenCalled();
     expect(h.payments.pay).not.toHaveBeenCalled();
+    expect(h.count('approvals')).toBe(0);
+  });
+
+  it('V6 denies an unselected cataloged merchant before quote contact', async () => {
+    const judge = createStubJudge('stub-approve');
+    const judged = vi.spyOn(judge, 'judge');
+    const h = await fixture(judge, { standingGrants: true });
+    const weather = await h.createMandate({
+      agent_id: 'agt_logistics',
+      task: 'Prepare a delivery plan for Oakland.',
+      subjects: ['Oakland'],
+      allowed_merchant_ids: ['mer_weather'],
+    });
+    const result = await h.pay(
+      h.purchase({ url: 'http://localhost:4101/v1/pricing/oakland?period=30d' }),
+      weather.token,
+    );
+    expect(result.body).toMatchObject({
+      status: 'denied',
+      stage: 'precontact',
+      reasons: ['MERCHANT_NOT_SELECTED'],
+    });
+    expect(h.payments.getQuote).not.toHaveBeenCalled();
+    expect(judged).not.toHaveBeenCalled();
+    expect(h.count('approvals')).toBe(0);
   });
 
   it('rejects an over-cap real quote before reserving funds or invoking the judge', async () => {
@@ -870,22 +901,44 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     expect(h.payments.pay).toHaveBeenCalledTimes(2);
   });
 
-  it.each([false, true])('standing grants require merchant selection (%s)', async (selected) => {
+  it('keeps standing grants off by default and sends the greeting-only weather request to the judge', async () => {
     const judge = createStubJudge('stub-approve');
     const called = vi.spyOn(judge, 'judge');
     const h = await fixture(judge);
-    h.db.sqlite
-      .prepare('UPDATE mandates SET subjects_json = ?, allowed_merchants_json = ? WHERE id = ?')
-      .run(
-        '["paris"]',
-        JSON.stringify(selected ? ['mer_weather'] : ['mer_pricing']),
-        h.mandate.mandate_id,
-      );
+    expect(h.deps.config.standingGrants).toBe(false);
+    const weather = await h.createMandate({
+      agent_id: 'agt_logistics',
+      task: 'Write a short greeting for Oakland. Do not research or purchase weather data.',
+      subjects: ['Oakland'],
+      allowed_merchant_ids: ['mer_weather'],
+    });
     const result = await h.pay(
-      h.purchase({ url: 'http://localhost:4102/v1/forecast?city=paris&units=metric' }),
+      h.purchase({ url: 'http://localhost:4102/v1/forecast?city=oakland&units=metric' }),
+      weather.token,
     );
-    expect(result.body).toMatchObject({ status: 'approved', stage: selected ? 'tier1' : 'judge' });
-    expect(called).toHaveBeenCalledTimes(selected ? 0 : 1);
+    expect(result.body).toMatchObject({ status: 'approved', stage: 'judge' });
+    expect(called).toHaveBeenCalledTimes(1);
+    expect(
+      h.db.sqlite.prepare('SELECT used_total FROM standing_grant_usage').get(),
+    ).toBeUndefined();
+  });
+
+  it('uses standing grants only when explicitly enabled', async () => {
+    const judge = createStubJudge('stub-approve');
+    const called = vi.spyOn(judge, 'judge');
+    const h = await fixture(judge, { standingGrants: true });
+    const weather = await h.createMandate({
+      agent_id: 'agt_logistics',
+      task: 'Check the Oakland forecast for delivery planning.',
+      subjects: ['Oakland'],
+      allowed_merchant_ids: ['mer_weather'],
+    });
+    const result = await h.pay(
+      h.purchase({ url: 'http://localhost:4102/v1/forecast?city=oakland&units=metric' }),
+      weather.token,
+    );
+    expect(result.body).toMatchObject({ status: 'approved', stage: 'tier1' });
+    expect(called).not.toHaveBeenCalled();
   });
 
   it('options and subject membership remain exact even after human review', async () => {
@@ -1053,7 +1106,6 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
   it.each([
     ['A2', 'http://localhost:4103/v1/headlines?topic=acme', 'GET', 'fetch_data'],
     ['A3', url, 'GET', 'subscribe'],
-    ['A14', 'http://localhost:4102/v1/forecast?city=acme&units=metric', 'GET', 'fetch_data'],
     ['A17', 'http://localhost:4101/v1/pricing/export', 'POST', 'fetch_data'],
   ] as const)(
     '%s reaches the judge when catalog-admitted and no grant applies',
@@ -1065,6 +1117,10 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
         injection_suspected: false,
       }));
       const h = await fixture(createInjectedJudge({ judge: provider }));
+      if (_id === 'A2')
+        h.db.sqlite
+          .prepare('UPDATE mandates SET allowed_merchants_json = ? WHERE id = ?')
+          .run(JSON.stringify(['mer_pricing', 'mer_news']), h.mandate.mandate_id);
       expect((await h.pay(h.purchase({ url: target, method, purpose }))).body).toMatchObject({
         status: 'denied',
         reasons: ['JUDGE_OFF_TASK'],
@@ -1075,6 +1131,27 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
       expect(h.money().reserved).toBe(0);
     },
   );
+
+  it('A14 is caught by merchant selection before quote contact or judge use', async () => {
+    const provider = vi.fn(async () => ({
+      decision: 'deny',
+      reasons: ['JUDGE_OFF_TASK'],
+      explanation: '',
+      injection_suspected: false,
+    }));
+    const h = await fixture(createInjectedJudge({ judge: provider }));
+    const result = await h.pay(
+      h.purchase({ url: 'http://localhost:4102/v1/forecast?city=acme&units=metric' }),
+    );
+    expect(result.body).toMatchObject({
+      status: 'denied',
+      stage: 'precontact',
+      reasons: ['MERCHANT_NOT_SELECTED'],
+    });
+    expect(provider).not.toHaveBeenCalled();
+    expect(h.payments.getQuote).not.toHaveBeenCalled();
+    expect(h.payments.pay).not.toHaveBeenCalled();
+  });
 
   it('a changed catalog-bound admission dependency fails startup composition', async () => {
     const h = await fixture();

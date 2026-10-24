@@ -234,6 +234,7 @@ export function grantHit(
     )
   )
     return false;
+  if (!deps.config.standingGrants) return false;
   const standing = deps.db.sqlite
     .prepare(
       'SELECT id FROM standing_grants WHERE role_id = ? AND endpoint_id = ? AND max_per_call >= ?',

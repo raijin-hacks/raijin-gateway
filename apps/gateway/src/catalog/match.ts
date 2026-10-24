@@ -77,11 +77,11 @@ export function matchEndpoint(
 
 export type VerificationRoute =
   | { kind: 'judge-eligible'; match: Extract<EndpointMatch, { kind: 'known' }> }
-  | { kind: 'escalate'; reason: 'UNCATALOGED_ENDPOINT' };
+  | { kind: 'deny'; reason: 'UNCATALOGED_ENDPOINT' };
 
 /** Call before quote contact, grant lookup or buildInput. Approval cannot bypass admission. */
 export function routeMatch(match: EndpointMatch): VerificationRoute {
   return match.kind === 'known'
     ? { kind: 'judge-eligible', match }
-    : { kind: 'escalate', reason: 'UNCATALOGED_ENDPOINT' };
+    : { kind: 'deny', reason: 'UNCATALOGED_ENDPOINT' };
 }

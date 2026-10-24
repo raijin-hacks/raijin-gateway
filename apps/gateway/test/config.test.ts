@@ -23,6 +23,7 @@ describe('loadConfig', () => {
       port: 4000,
       paymentsMode: 'mock',
       judgeMode: 'stub-escalate',
+      standingGrants: false,
       streamHeartbeatMs: TIMING.streamHeartbeatMs,
     });
   });
@@ -36,6 +37,7 @@ describe('loadConfig', () => {
         PORT: '4999',
         PAYMENTS_MODE: 'real',
         JUDGE_MODE: 'stub-approve',
+        STANDING_GRANTS: 'on',
         WALLET_PRIVATE_KEY: 'not-ours-to-read',
       }),
     ).toEqual({
@@ -45,6 +47,7 @@ describe('loadConfig', () => {
       port: 4999,
       paymentsMode: 'real',
       judgeMode: 'stub-approve',
+      standingGrants: true,
       streamHeartbeatMs: TIMING.streamHeartbeatMs,
     });
   });
@@ -62,6 +65,7 @@ describe('loadConfig', () => {
     ['a 15-character admin token', { ADMIN_TOKEN: 'x'.repeat(15) }, 'ADMIN_TOKEN'],
     ['an unknown payments mode', { ADMIN_TOKEN, PAYMENTS_MODE: 'live' }, 'PAYMENTS_MODE'],
     ['an unknown judge mode', { ADMIN_TOKEN, JUDGE_MODE: 'yolo' }, 'JUDGE_MODE'],
+    ['an unknown standing-grants mode', { ADMIN_TOKEN, STANDING_GRANTS: 'yes' }, 'STANDING_GRANTS'],
     ['a port that is not a number', { ADMIN_TOKEN, PORT: 'http' }, 'PORT'],
     ['a fractional port', { ADMIN_TOKEN, PORT: '4000.5' }, 'PORT'],
     ['a negative port', { ADMIN_TOKEN, PORT: '-1' }, 'PORT'],

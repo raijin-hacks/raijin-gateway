@@ -8,4 +8,7 @@ it('matches the version line in final_contracts.md', () => {
     'utf8',
   );
   expect(doc.split('\n', 1)[0]).toBe(`# Agent Payment Firewall: Contracts v${CONTRACTS_VERSION}`);
+  expect(doc.split('\n').find((line) => line.startsWith('v1.3:'))).toContain('`saveResponse`');
+  expect(doc.split('\n').find((line) => line.startsWith('v1.3:'))).toContain('`GET /agents`');
+  expect(doc.split('\n').find((line) => line.startsWith('v1.3:'))).toContain('`GET /approvals`');
 });

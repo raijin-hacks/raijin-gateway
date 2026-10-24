@@ -1,8 +1,10 @@
-# Agent Payment Firewall: Contracts v1.2
+# Agent Payment Firewall: Contracts v1.3
 
 v1.1: added `GET /catalog`, `PaymentStore`, `EndpointMatch`, `JudgeContext`; grant clamping moved to the gateway; `pay()` never marks a payment failed.
 
-Proposed amendment (owner A, pending team sign-off per section 6): `PaymentStore.saveResponse` keeps a merchant's 2xx reply before settlement is proven, so a delayed settlement can't leave a paid purchase without its data.
+v1.2: added `UNCATALOGED_ENDPOINT`, `INTERNAL_ERROR`, nullable `approved.response`, UUIDv4 idempotency headers, and durable pending review handling.
+
+v1.3: `saveResponse` preserves a merchant's 2xx reply before settlement is proven; `GET /agents` and `GET /approvals` expose operator data; cataloged merchants outside `allowed_merchant_ids` deny at pre-contact; unknown endpoints deny with an instruction to add them to the catalog; standing grants are off by default (`STANDING_GRANTS=off`).
 
 The single source of truth for all four people. If code and this file disagree, this file wins until the team agrees to change it. Paste the relevant sections into every coding-agent prompt.
 
@@ -329,15 +331,17 @@ an epoch timestamp in milliseconds.
 
 | Stage | Codes |
 |---|---|
-| Pre-contact | `NO_MANDATE`, `QUARANTINED`, `DENYLIST`, `SECRET_IN_URL`, `QUERY_TOO_LONG`, `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `DUPLICATE_PARAM`, `BAD_URL`, `UNCATALOGED_ENDPOINT` |
+| Pre-contact | `NO_MANDATE`, `QUARANTINED`, `DENYLIST`, `SECRET_IN_URL`, `QUERY_TOO_LONG`, `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `DUPLICATE_PARAM`, `BAD_URL`, `UNCATALOGED_ENDPOINT`, `MERCHANT_NOT_SELECTED` |
 | Quote | `QUOTE_FAILED`, `NOT_402`, `QUOTE_INVALID` |
 | Tier 0 | `NETWORK`, `PAYEE_SWAP`, `PER_CALL_CAP`, `REFERENCE_PRICE`, `PRICE_MISMATCH`, `MANDATE_BUDGET`, `TENANT_DAILY`, `VELOCITY`, `DUPLICATE`, `NEW_PAYEE_LIMIT`, `INTERNAL_ERROR` |
-| Tier 1 (logged on miss; hit approves) | `GRANT_HIT`, `GRANT_NONE`, `GRANT_PRICE`, `GRANT_ENDPOINT`, `GRANT_METHOD`, `GRANT_PARAMS`, `GRANT_TRUST`, `GRANT_EXHAUSTED`, `MERCHANT_NOT_SELECTED` |
+| Tier 1 (logged on miss; hit approves) | `GRANT_HIT`, `GRANT_NONE`, `GRANT_PRICE`, `GRANT_ENDPOINT`, `GRANT_METHOD`, `GRANT_PARAMS`, `GRANT_TRUST`, `GRANT_EXHAUSTED` |
 | Judge | `JUDGE_APPROVED`, `JUDGE_OFF_TASK`, `JUDGE_OVER_SCOPED`, `JUDGE_UNKNOWN_MERCHANT`, `JUDGE_PRICE_UNUSUAL`, `JUDGE_UNEXPECTED_PARAMS`, `JUDGE_INJECTION_SUSPECTED`, `JUDGE_ERROR`, `JUDGE_INVALID_OUTPUT` |
 | Human | `HUMAN_APPROVED`, `HUMAN_REJECTED`, `HUMAN_TIMEOUT` |
 | Trust routing | `TRUST_REQUIRES_HUMAN` |
 
-Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `REFERENCE_PRICE`, `NEW_PAYEE_LIMIT`, `TRUST_REQUIRES_HUMAN`, `UNCATALOGED_ENDPOINT`. Every other code in those stages denies.
+Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `REFERENCE_PRICE`, `NEW_PAYEE_LIMIT`, `TRUST_REQUIRES_HUMAN`. Every other code in those stages denies.
+
+An unselected cataloged merchant denies with `MERCHANT_NOT_SELECTED` before any quote. An unknown endpoint denies with `UNCATALOGED_ENDPOINT` and the explanation "add this endpoint to the catalog"; it does not create a review item.
 
 ### Pipeline order (fixed)
 
@@ -348,7 +352,7 @@ Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEM
 5. Fetch the 402 quote (A's `getQuote`).
 6. Tier 0, ending with the atomic reservation.
 7. Trust routing: score < 20 deny `QUARANTINED`; 20 to 39 go to human; 40 to 59 skip Tier 1.
-8. Tier 1 grant lookup (standing grants only if the merchant is in `allowed_merchants`).
+8. Tier 1 grant lookup. Per-mandate grants remain available. Standing grants are skipped unless `STANDING_GRANTS=on`; the default is `off`. The pre-contact merchant-selection rule applies before any grant lookup.
 9. Judge (C's module).
 10. Human queue if escalated (10-minute timeout, then `HUMAN_TIMEOUT`, reservation released).
 11. Log the decision, then call A's `pay()`. On denial at any stage after step 6, release the reservation.
@@ -468,7 +472,7 @@ C's input builder is the **only** code allowed to construct judge input, and it 
 }
 ```
 
-Unknown merchant/endpoint shape is retained for internal diagnostics and compatibility. In v1.2 every unknown route is intercepted before quote, grants or judge; this shape must never be sent to the model:
+Unknown merchant/endpoint shape is retained for internal diagnostics and compatibility. In v1.3 every unknown route is denied before quote, grants or judge; this shape must never be sent to the model:
 
 ```json
 "merchant": { "known": false, "selected_for_mandate": false },
@@ -675,6 +679,6 @@ export type StreamEvent =
 
 No one changes a contract silently inside their own module.
 
-## Mixed PR phase 6 amendment (v1.2)
+## v1.3 contract changes
 
-This mixed Chunk 2/3 implementation adds `UNCATALOGED_ENDPOINT` (pre-contact escalation for every unknown route, including routes without parameters), `INTERNAL_ERROR` (fail-closed internal denial recorded at Tier 0), and permits `approved.response: null` after reconciliation when merchant content is unavailable. Unknown-route review cannot bypass catalog admission. `/pay` requires the existing body key and a matching UUIDv4 `Idempotency-Key` header; conflicts return 409, in-progress replays return 202 with the existing pending handle. Other decision responses remain 200. Human approvals are request scoped and cannot override hard checks. The proposed amendments are explicit for owner review; no team sign-off is claimed.
+`UNCATALOGED_ENDPOINT` remains a pre-contact reason but now denies without review. `MERCHANT_NOT_SELECTED` is a pre-contact denial before quote contact. `STANDING_GRANTS=off` skips standing grants and lets Tier 1 continue to the judge; explicitly setting it to `on` enables them. The v1.3 contract also records the already-implemented `PaymentStore.saveResponse`, `GET /agents`, and `GET /approvals` changes. `/pay` requires the existing body key and a matching UUIDv4 `Idempotency-Key` header; conflicts return 409, in-progress replays return 202 with the existing pending handle. Other decision responses remain 200. Human approvals are request scoped and cannot override hard checks.

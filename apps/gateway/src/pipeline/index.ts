@@ -550,8 +550,9 @@ export function createPipeline(deps: PipelineDependencies) {
           id,
           owner,
           'precontact',
-          [result.kind === 'deny' ? result.reason : 'UNCATALOGED_ENDPOINT'],
-          result.kind === 'escalate',
+          [result.reason],
+          false,
+          result.reason === 'UNCATALOGED_ENDPOINT' ? 'add this endpoint to the catalog' : null,
         );
       return result;
     } catch {

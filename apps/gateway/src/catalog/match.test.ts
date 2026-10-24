@@ -224,7 +224,7 @@ describe('exact catalog matching', () => {
   ])('keeps origin, method and segment mismatch unknown: %s %s', (raw, method) => {
     const result = matchEndpoint(canonical(raw), method as HttpMethod, catalog());
     expect(result).toMatchObject({ kind: 'unknown', hasParams: false });
-    expect(routeMatch(result)).toEqual({ kind: 'escalate', reason: 'UNCATALOGED_ENDPOINT' });
+    expect(routeMatch(result)).toEqual({ kind: 'deny', reason: 'UNCATALOGED_ENDPOINT' });
     expect(result).not.toHaveProperty('merchant');
     expect(result).not.toHaveProperty('endpoint');
   });
