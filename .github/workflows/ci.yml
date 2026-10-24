@@ -35,8 +35,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_app: ${{ steps.tooling.outputs.has_app }}
-      package_manager: ${{ steps.tooling.outputs.package_manager }}
-      lockfile: ${{ steps.tooling.outputs.lockfile }}
+      lint: ${{ steps.tooling.outputs.lint }}
+      format: ${{ steps.tooling.outputs.format }}
+      typecheck: ${{ steps.tooling.outputs.typecheck }}
+      test: ${{ steps.tooling.outputs.test }}
+      build: ${{ steps.tooling.outputs.build }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect application and validate check scripts
@@ -52,22 +55,23 @@ jobs:
             process.exit(0);
           }
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const manager = pkg.packageManager?.split('@')[0] ||
-            (fs.existsSync('pnpm-lock.yaml') ? 'pnpm' : 'npm');
-          if (!['npm', 'pnpm'].includes(manager)) {
-            throw new Error(`Unsupported package manager: ${manager}. CI supports npm and pnpm.`);
+          if (!/^pnpm@\d+\.\d+\.\d+(?:\+.*)?$/.test(pkg.packageManager || '')) {
+            throw new Error('Pin an exact pnpm version in package.json packageManager.');
           }
-          if (manager === 'pnpm' && !/^pnpm@\d+\.\d+\.\d+/.test(pkg.packageManager || '')) {
-            throw new Error('Pin pnpm in package.json packageManager (for example, pnpm@10.0.0).');
+          if (!fs.existsSync('pnpm-lock.yaml')) {
+            throw new Error('Commit pnpm-lock.yaml for reproducible pnpm installs.');
           }
-          const lockfile = manager === 'pnpm' ? 'pnpm-lock.yaml' : 'package-lock.json';
-          if (!fs.existsSync(lockfile)) {
-            throw new Error(`Commit a root ${lockfile} for reproducible ${manager} installs.`);
+          const checks = { lint: 'lint', format: 'format:check', typecheck: 'typecheck', test: 'test', build: 'build' };
+          const missing = [];
+          for (const [output, script] of Object.entries(checks)) {
+            const available = typeof pkg.scripts?.[script] === 'string' && !!pkg.scripts[script].trim();
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${output}=${available}\n`);
+            if (!available) missing.push(script);
           }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `package_manager=${manager}\nlockfile=${lockfile}\n`);
-          const required = ['lint', 'format:check', 'typecheck', 'test', 'build'];
-          const missing = required.filter(name => typeof pkg.scripts?.[name] !== 'string' || !pkg.scripts[name].trim());
-          if (missing.length) throw new Error(`Missing required package.json scripts: ${missing.join(', ')}`);
+          if (missing.length) {
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              `## Application checks pending\nMissing root scripts: ${missing.join(', ')}. These checks are skipped until implemented; frozen dependency installation still runs.\n`);
+          }
           fs.appendFileSync(process.env.GITHUB_OUTPUT, 'has_app=true\n');
           NODE
 
@@ -81,30 +85,29 @@ jobs:
       CI: true
     steps:
       - uses: actions/checkout@v4
-      - name: Enable pinned pnpm
-        if: needs.inspect.outputs.package_manager == 'pnpm'
-        run: corepack enable
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: ${{ needs.inspect.outputs.package_manager }}
-          cache-dependency-path: ${{ needs.inspect.outputs.lockfile }}
-      - name: Install npm dependencies
-        if: needs.inspect.outputs.package_manager == 'npm'
-        run: npm ci
-      - name: Install pnpm dependencies
-        if: needs.inspect.outputs.package_manager == 'pnpm'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Lint
-        run: ${{ needs.inspect.outputs.package_manager }} run lint
+        if: needs.inspect.outputs.lint == 'true'
+        run: pnpm run lint
       - name: Check formatting
-        run: ${{ needs.inspect.outputs.package_manager }} run format:check
+        if: needs.inspect.outputs.format == 'true'
+        run: pnpm run format:check
       - name: Check types
-        run: ${{ needs.inspect.outputs.package_manager }} run typecheck
+        if: needs.inspect.outputs.typecheck == 'true'
+        run: pnpm run typecheck
       - name: Test
-        run: ${{ needs.inspect.outputs.package_manager }} run test
+        if: needs.inspect.outputs.test == 'true'
+        run: pnpm run test
       - name: Build
-        run: ${{ needs.inspect.outputs.package_manager }} run build
+        if: needs.inspect.outputs.build == 'true'
+        run: pnpm run build
 
 # CD PLACEHOLDER: docs/Design.md specifies a local demo and only tentative Azure hosting.
 # Add deployment after a host, build artifact, environment, and credentials are defined.

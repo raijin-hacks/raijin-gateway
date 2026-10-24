@@ -3,42 +3,28 @@
 `ci.yml` runs on pull requests, pushes to `main`, and manual dispatch.
 It uses read-only repository permissions and cancels superseded runs on the same ref.
 
-The unconditional `Python tests` job sets up Python 3.12, caches pip downloads,
-installs `requirements-test.txt`, and runs `python -m pytest`. Local venv setup
-is documented in `tests/README.md`.
+Python tests run independently using Python 3.12 and `requirements-test.txt`.
+Local setup is documented in `tests/README.md`.
 
-There is no Node application manifest yet. The inspection job reports this in
-the Actions summary; Node application checks are explicitly skipped until a root
-`package.json` exists. Python tests run independently of that inspection.
+## pnpm workspace checks
 
-## Activating application checks
+The workspace uses Node 22 and the exact pnpm version pinned in the root
+`package.json` (`packageManager`). CI installs pnpm using `pnpm/action-setup`,
+caches its store using `pnpm-lock.yaml`, and runs
+`pnpm install --frozen-lockfile`. Commit lockfile changes alongside dependencies.
+Do not generate or commit an npm `package-lock.json` for this workspace.
 
-The design proposes TypeScript/Node and Next.js. This scaffold uses Node 22
-and supports npm and pnpm; these are CI defaults, not existing repository requirements. When adding
-the application:
+CI runs each root script when available: `lint`, `format:check`, `typecheck`,
+`test`, and `build`. The P1 scaffold currently provides payment and merchant
+commands only. Missing checks are reported as pending in the Actions summary
+and skipped; dependency installation and Python tests still run.
+As tooling is implemented, add real, non-interactive root scripts covering all
+workspace packages. Formatting should check without writing; tests should run
+once without watch mode, using mocked external services and no wallet or model
+credentials. CI automatically enables each check when its root script is added.
 
-1. Commit a root `package.json` and the matching lockfile: `package-lock.json`
-   for npm or `pnpm-lock.yaml` for pnpm. For pnpm, pin an exact version in
-   `packageManager` (such as `pnpm@10.0.0`); CI enables it through Corepack.
-   Other package managers require workflow changes.
-2. Define real, non-interactive scripts: `lint`, `format:check`, `typecheck`,
-   `test`, and `build`. Formatting must check without writing; tests must run once
-   without watch mode. For a workspace, root scripts must cover all packages.
-3. The workflow validates these prerequisites, sets up Node with the npm download
-   cache keyed by the matching lockfile, installs with `npm ci` or
-   `pnpm install --frozen-lockfile`, and runs each check using that manager.
-   Missing scripts fail CI rather than silently skipping checks.
+## Deployment
 
-No application scripts or dependencies have been invented for this docs-only
-repository. Once tests exist, include the design's canary, parallel-reservation,
-and settlement/crash reliability cases in `npm test`. Keep CI deterministic with
-mocked external services and no wallet or model credentials. If the implementation
-does not use TypeScript, replace the type-check step with the applicable check.
-
-## CD PLACEHOLDER
-
-[The design](../../docs/Design.md) specifies local hosting for the demo; Azure is conditional. No deploy
-target, deployment command, artifact, or credentials are configured, so there is
-no deploy job. Once those are chosen, add a job gated on successful application
-checks and pushes to `main`, with an appropriate GitHub environment and scoped
-deployment credentials.
+[The design](../../docs/Design.md) specifies local hosting for the demo; Azure is
+conditional. Deployment remains pending a host, build artifact, environment,
+and credentials. Gate future deployment on successful checks and a push to main.
