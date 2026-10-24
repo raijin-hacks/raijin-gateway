@@ -1,0 +1,9 @@
+{
+  "network": "eip155:84532",
+  "payees": {
+    "pricescope": "0x0d972d44bda2bc27420debd711395729480186ae",
+    "skydata": "0xd78e8d21837b7957b53251fae747e58c6e71df3c",
+    "newswire": "0x9b9454a6605a8cb0a552c4fbc7db76b6a55aa614",
+    "attacker": "0xca7c3c3ac945e0febcebae02de1fbe847bcd4d19"
+  }
+}
