@@ -1,6 +1,6 @@
 # Chunk 2 build plan: gateway core
 
-Oct 23, 2026 · Status: proposal
+Oct 23, 2026 · Status: phases 0–3 done; phases 4–7 superseded by `CHUNK-2-FINISH-PLAN.md`
 
 This is the order and shape for coding Chunk 2. **What** to build is in `CHUNK-2-GATEWAY.md` (tasks G1–G10) and `final_contracts.md`. This doc adds how the code is laid out, the order to build it in, and the decisions to lock first. Related: `CHUNK-2-3-BOUNDARY.md` (gaps 1–14) and `TEST-HARNESS-PLAN.md`.
 
