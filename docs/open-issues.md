@@ -20,7 +20,7 @@ Decisions needed:
 - [ ] Adopt the SDK transport, keeping the 5 s deadline, no retries, response cap and fail-closed errors.
 - [ ] Local policy: `ant auth login` only, or personal keys allowed too.
 - [ ] Live evals in CI or not (manual or scheduled only; each run costs money), and if yes, who sets up the WIF service account and federation rule.
-- [ ] Judge model: keep a pinned previous-generation model or move to `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5`. Any change means rerunning the phase 2 tests and fixing `.env.example`.
+- [x] Model decided: Sonnet 4.5, exact ID `claude-sonnet-4-5-20250929`. `.env.example` now agrees with the existing allowlist. Keep native fetch and `ANTHROPIC_API_KEY`; SDK/auth redesign is deferred. Live draft/evaluation evidence remains unmeasured until a credentialed local run.
 - [ ] Billing: each person's account, or one shared service account.
 
 ## Chunk 4 variants
