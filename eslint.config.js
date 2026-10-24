@@ -50,6 +50,14 @@ export default [
     },
   },
   {
+    // Mutation tests deliberately walk malformed JSON at runtime (Chunk 3).
+    files: ['**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
     files: ['apps/gateway/src/**/*.ts'],
     ignores: ['apps/gateway/src/clock.ts'],
     rules: {

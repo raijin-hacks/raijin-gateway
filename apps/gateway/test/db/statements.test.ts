@@ -4,7 +4,7 @@ import { CONTRACT_SQL } from '../../src/db/statements.js';
 
 const squash = (sql: string) => sql.replace(/\s+/g, ' ').trim();
 const DOC = squash(
-  readFileSync(new URL('../../../../final_contracts.md', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../../design-docs/final_contracts.md', import.meta.url), 'utf8'),
 );
 
 it.each(Object.entries(CONTRACT_SQL))('%s is copied verbatim from final_contracts.md', (_, sql) => {

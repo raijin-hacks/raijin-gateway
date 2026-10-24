@@ -64,7 +64,10 @@ interface ContractTable {
 }
 
 function contractTables(): ContractTable[] {
-  const doc = readFileSync(new URL('../../../../final_contracts.md', import.meta.url), 'utf8');
+  const doc = readFileSync(
+    new URL('../../../../design-docs/final_contracts.md', import.meta.url),
+    'utf8',
+  );
   const section = doc.slice(doc.indexOf('## 1. Database schema'));
   const sql = /```sql\n([\s\S]*?)```/.exec(section)?.[1] ?? '';
   const names = (list: string) => list.split(',').map((s) => s.trim());

@@ -20,4 +20,7 @@ coverage/
 *.db-wal
 *.db-shm
 
+# Personal design notes
+design-docs/local/
+
 .DS_Store

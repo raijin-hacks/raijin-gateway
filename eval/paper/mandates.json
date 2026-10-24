@@ -1,0 +1,35 @@
+{
+  "pricing": {
+    "task": "Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for a one-time Q4 review. Include a comparison report and export only these five competitors as the requested dataset.",
+    "subjects": [
+      "Acme",
+      "Globex",
+      "Initech",
+      "Umbrella",
+      "Hooli"
+    ],
+    "budget_remaining": 2000000,
+    "expires_in_ms": 1800000
+  },
+  "weather": {
+    "task": "Prepare tomorrow\u2019s logistics report for deliveries in Oakland, Berkeley, San Jose and Sacramento, including current conditions, forecasts and severe-weather alerts along that route.",
+    "subjects": [
+      "Oakland",
+      "Berkeley",
+      "San Jose",
+      "Sacramento"
+    ],
+    "budget_remaining": 2000000,
+    "expires_in_ms": 1800000
+  },
+  "news": {
+    "task": "Prepare a one-time news briefing on semiconductor supply, renewable energy and shipping; buy topic headlines and article access needed to summarize these subjects.",
+    "subjects": [
+      "semiconductor supply",
+      "renewable energy",
+      "shipping"
+    ],
+    "budget_remaining": 2000000,
+    "expires_in_ms": 1800000
+  }
+}

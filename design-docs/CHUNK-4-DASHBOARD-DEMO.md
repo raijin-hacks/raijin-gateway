@@ -1,7 +1,7 @@
 # Chunk 4 · Dashboard and demo
 
 **Size:** small. **Security-critical:** no. Nothing in this chunk makes a payment decision, so a bug here can't break the gateway.
-**Read first:** `contracts.md` section 2 (the API and `/stream`) and section 5 (`StreamEvent`), and the design doc's demo script.
+**Read first:** `final_contracts.md` section 2 (the API and `/stream`) and section 5 (`StreamEvent`), and the design doc's demo script.
 
 ## Your job in one sentence
 

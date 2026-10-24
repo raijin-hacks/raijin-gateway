@@ -1,7 +1,7 @@
 # Chunk 1 · Payments
 
 **Size:** large. **Security-critical:** yes.
-**Read first:** `contracts.md` (sections 0, 1, 2 and 5). It is the source of truth; if this file disagrees with it, stop and raise it with the team.
+**Read first:** `final_contracts.md` (sections 0, 1, 2 and 5). It is the source of truth; if this file disagrees with it, stop and raise it with the team.
 
 ## Your job in one sentence
 
@@ -46,11 +46,11 @@ export function startReconciler(payments: PaymentsModule, store: PaymentStore, i
 export class QuoteError extends Error { code: QuoteCode }
 ```
 
-`PaymentsModule` is defined in `contracts.md` section 5. The mock settles instantly with a fake tx hash, never touches the network, and is what Chunk 2 uses until Saturday evening and what the load test uses.
+`PaymentsModule` is defined in `final_contracts.md` section 5. The mock settles instantly with a fake tx hash, never touches the network, and is what Chunk 2 uses until Saturday evening and what the load test uses.
 
 ### You consume
 
-`PaymentStore`, implemented by Chunk 2 (defined in `contracts.md` section 5). You never write SQL yourself. Until Chunk 2 delivers it, use your own in-memory fake that obeys the same rules: every transition is conditional on the current state.
+`PaymentStore`, implemented by Chunk 2 (defined in `final_contracts.md` section 5). You never write SQL yourself. Until Chunk 2 delivers it, use your own in-memory fake that obeys the same rules: every transition is conditional on the current state.
 
 ### Who calls you
 

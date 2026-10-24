@@ -10,3 +10,7 @@ export * from './reasons.js';
 export * from './constants.js';
 export * from './normalize.js';
 export * from './schemas.js';
+
+// JudgeInput validation is the missing Chunk 3 boundary export.
+export { judgeInputSchema, judgeInputSchema as JudgeInputSchema } from './judge-input.js';
+export { JudgeOutputSchema as judgeOutputSchema } from './schemas.js';

@@ -3,32 +3,28 @@
 `ci.yml` runs on pull requests, pushes to `main`, and manual dispatch.
 It uses read-only repository permissions and cancels superseded runs on the same ref.
 
-The unconditional `Python tests` job sets up Python 3.12, caches pip downloads,
-installs `requirements-test.txt`, and runs `python -m pytest`. Local venv setup
-is documented in `tests/README.md`.
+Python tests run independently using Python 3.12 and `requirements-test.txt`.
+Local setup is documented in `tests/README.md`.
 
-## Node application checks
+## pnpm workspace checks
 
-The repository is a pnpm workspace (`final_contracts.md` section 0). The
-inspection job checks that the root `package.json` names an exact pnpm version
-in `packageManager`, that `pnpm-lock.yaml` is committed, and that these scripts
-exist: `lint`, `format:check`, `typecheck`, `test`, and `build`. Missing scripts
-fail CI rather than silently skipping checks.
+The workspace uses Node 22 and the exact pnpm version pinned in the root
+`package.json` (`packageManager`). CI installs pnpm using `pnpm/action-setup`,
+caches its store using `pnpm-lock.yaml`, and runs
+`pnpm install --frozen-lockfile`. Commit lockfile changes alongside dependencies.
+Do not generate or commit an npm `package-lock.json` for this workspace.
 
-The `checks` job then installs that pnpm version with `pnpm/action-setup` (it
-reads `packageManager`), sets up the Node version in `.nvmrc` with the pnpm store
-cache keyed by the lockfile, installs with `pnpm install --frozen-lockfile`, and
-runs each check in order. The root scripts cover every workspace package.
+CI runs each root script when available: `lint`, `format:check`, `typecheck`,
+`test`, and `build`. All five exist today. A missing script is reported as
+pending in the Actions summary and skipped; dependency installation and Python
+tests still run.
+As tooling is implemented, add real, non-interactive root scripts covering all
+workspace packages. Formatting should check without writing; tests should run
+once without watch mode, using mocked external services and no wallet or model
+credentials. CI automatically enables each check when its root script is added.
 
-Keep CI deterministic: mocked external services, no wallet or model credentials.
-Include the design's canary, parallel-reservation, and settlement/crash
-reliability cases in `pnpm test` as they are written (see `TEST-HARNESS-PLAN.md`).
-The Python tests run independently of the Node checks.
+## Deployment
 
-## CD PLACEHOLDER
-
-`Design.md` specifies local hosting for the demo; Azure is conditional. No deploy
-target, deployment command, artifact, or credentials are configured, so there is
-no deploy job. Once those are chosen, add a job gated on successful application
-checks and pushes to `main`, with an appropriate GitHub environment and scoped
-deployment credentials.
+[The design](../../design-docs/Design.md) specifies local hosting for the demo; Azure is
+conditional. Deployment remains pending a host, build artifact, environment,
+and credentials. Gate future deployment on successful checks and a push to main.

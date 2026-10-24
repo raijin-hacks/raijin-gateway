@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 
 const readDoc = (name: string) =>
-  readFileSync(new URL(`../../../${name}`, import.meta.url), 'utf8');
+  readFileSync(new URL(`../../../design-docs/${name}`, import.meta.url), 'utf8');
 
 export const CONTRACTS_DOC = readDoc('final_contracts.md');
 export const DESIGN_DOC = readDoc('Design.md');

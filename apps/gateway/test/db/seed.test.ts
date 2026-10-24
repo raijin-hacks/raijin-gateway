@@ -33,7 +33,10 @@ describe('seedDatabase', () => {
 
   it("uses final_contracts.md's role_policy example as the research policy", () => {
     const { db } = seededDb();
-    const doc = readFileSync(new URL('../../../../final_contracts.md', import.meta.url), 'utf8');
+    const doc = readFileSync(
+      new URL('../../../../design-docs/final_contracts.md', import.meta.url),
+      'utf8',
+    );
     const policy = /"role_policy": "([^"]+)"/.exec(doc)?.[1];
     expect(policy).toBeDefined();
     expect(one(db, "SELECT policy_text FROM roles WHERE name = 'research'")).toEqual({

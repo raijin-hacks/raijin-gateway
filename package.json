@@ -1,6 +1,8 @@
 {
-  "name": "agent-payment-firewall",
+  "name": "calhacks-13-0",
+  "version": "0.1.0",
   "private": true,
+  "description": "Cal Hacks 13.0 project",
   "type": "module",
   "packageManager": "pnpm@10.34.7",
   "engines": {
@@ -10,10 +12,14 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.check.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build": "tsc -b"
+  },
+  "dependencies": {
+    "@apf/contracts": "workspace:*",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
