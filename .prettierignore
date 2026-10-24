@@ -2,6 +2,8 @@
 *.md
 .github/
 tests/
+# A verbatim copy of final_contracts.md section 5, kept diffable against the doc.
+packages/contracts/src/types.ts
 
 pnpm-lock.yaml
 dist/
