@@ -8,6 +8,7 @@ import { baseSepolia } from 'viem/chains';
 import { usdcAddress } from './quote.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore } from '@apf/contracts';
+import { redactSensitiveText } from '../log.js';
 
 // Internal receipt channel for pay(); only a chain lookup may populate this hash.
 export interface SettlementReceipt {
@@ -67,8 +68,9 @@ export function createReconcile(
   const stuck = (paymentId: string, reason: string) => {
     if (reported.has(paymentId)) return;
     reported.add(paymentId);
-    console.error(`[reconciler] STUCK ${paymentId}: ${reason}`);
-    onStuck?.(paymentId, reason);
+    const safeReason = redactSensitiveText(reason, [wallet]);
+    console.error(`[reconciler] STUCK ${paymentId}: ${safeReason}`);
+    onStuck?.(paymentId, safeReason);
   };
   const longExpired = (validBeforeMs: number | null) =>
     validBeforeMs === null || clock.now() > validBeforeMs + STUCK_AFTER_MS;
@@ -79,6 +81,7 @@ export function createReconcile(
   ): Promise<Resolution> {
     const row = await store.get(paymentId);
     if (!row) throw new Error(`payment ${paymentId} not found`);
+    const logSecrets = [wallet, row.payee, row.nonce ?? '', row.authorization_json ?? ''];
 
     switch (row.state) {
       case 'SETTLED':
@@ -107,7 +110,7 @@ export function createReconcile(
       authorizer = JSON.parse(row.authorization_json ?? '').payload.authorization.from ?? wallet;
     } catch (err) {
       console.warn(
-        `[reconciler] ${paymentId}: stored authorization is unreadable, using our wallet as authorizer: ${describe(err)}`,
+        `[reconciler] ${paymentId}: stored authorization is unreadable, using our wallet as authorizer: ${describe(err, logSecrets)}`,
       );
     }
 
@@ -123,10 +126,10 @@ export function createReconcile(
     } catch (err) {
       // No proof either way: never fail on an unreadable chain, the merchant may have settled.
       console.warn(
-        `[reconciler] ${paymentId}: chain lookup failed, leaving ${row.state}: ${describe(err)}`,
+        `[reconciler] ${paymentId}: chain lookup failed, leaving ${row.state}: ${describe(err, logSecrets)}`,
       );
       if (longExpired(row.valid_before))
-        stuck(paymentId, `chain unreadable long past validBefore: ${describe(err)}`);
+        stuck(paymentId, `chain unreadable long past validBefore: ${describe(err, logSecrets)}`);
       return 'UNKNOWN';
     }
 
@@ -141,6 +144,7 @@ export function createReconcile(
         blockNumber,
         blockTimestampS,
         receipt,
+        logSecrets,
       );
 
     if (row.valid_before === null) {
@@ -164,10 +168,13 @@ export function createReconcile(
       usedAtFinalized = await nonceUsedAt(authorizer, nonce, finalizedNumber);
     } catch (err) {
       console.warn(
-        `[reconciler] ${paymentId}: finalized lookup failed, leaving ${row.state}: ${describe(err)}`,
+        `[reconciler] ${paymentId}: finalized lookup failed, leaving ${row.state}: ${describe(err, logSecrets)}`,
       );
       if (longExpired(row.valid_before))
-        stuck(paymentId, `finalized block unreadable long past validBefore: ${describe(err)}`);
+        stuck(
+          paymentId,
+          `finalized block unreadable long past validBefore: ${describe(err, logSecrets)}`,
+        );
       return 'UNKNOWN';
     }
     if (usedAtFinalized) {
@@ -179,6 +186,7 @@ export function createReconcile(
         finalizedNumber,
         finalizedTimestampS,
         receipt,
+        logSecrets,
       );
     }
     // Unused at a finalized block at or past validBefore: USDC rejects it from here on, on a chain that can't change.
@@ -211,11 +219,19 @@ export function createReconcile(
     atBlock: bigint,
     atTimestampS: bigint,
     receipt?: SettlementReceipt,
+    logSecrets: readonly string[] = [],
   ): Promise<Resolution> {
     const validBeforeS =
       validBeforeMs === null ? atTimestampS : BigInt(Math.floor(validBeforeMs / 1000));
     const txHash =
-      (await findSettlementTx(authorizer, nonce, atBlock, atTimestampS, validBeforeS)) ?? 'unknown';
+      (await findSettlementTx(
+        authorizer,
+        nonce,
+        atBlock,
+        atTimestampS,
+        validBeforeS,
+        logSecrets,
+      )) ?? 'unknown';
     if (receipt) receipt.txHash = txHash; // Chain proof exists even if ledger recording fails.
     await store.settle(paymentId, txHash);
     return currentState(paymentId);
@@ -229,6 +245,7 @@ export function createReconcile(
     latest: bigint,
     latestTimestampS: bigint,
     validBeforeS: bigint,
+    logSecrets: readonly string[],
   ): Promise<string | null> {
     try {
       const sampleFrom = latest > RATE_SAMPLE_BLOCKS ? latest - RATE_SAMPLE_BLOCKS : 0n;
@@ -260,7 +277,7 @@ export function createReconcile(
       }
     } catch (err) {
       console.warn(
-        `[reconciler] AuthorizationUsed lookup failed, recording tx "unknown": ${describe(err)}`,
+        `[reconciler] AuthorizationUsed lookup failed, recording tx "unknown": ${describe(err, logSecrets)}`,
       );
       return null;
     }
@@ -298,7 +315,15 @@ export function startReconciler(
       try {
         await payments.reconcile(id);
       } catch (err) {
-        console.error(`[reconciler] ${id}: ${describe(err)}`);
+        let payee = '';
+        try {
+          payee = (await store.get(id))?.payee ?? '';
+        } catch (lookupError) {
+          console.error(
+            `[reconciler] ${id}: failed to reload payment details after reconcile error: ${describe(lookupError)}`,
+          );
+        }
+        console.error(`[reconciler] ${id}: ${describe(err, [payee])}`);
       }
     }
   };
@@ -317,10 +342,13 @@ export function startReconciler(
   };
 }
 
-function describe(err: unknown): string {
+function describe(err: unknown, secrets: readonly string[] = []): string {
+  let description: string;
   if (err instanceof Error) {
     const cause = err.cause instanceof Error ? ` (${err.cause.message})` : '';
-    return `${err.name}: ${err.message}${cause}`;
+    description = `${err.name}: ${err.message}${cause}`;
+  } else {
+    description = String(err);
   }
-  return String(err);
+  return redactSensitiveText(description, secrets);
 }

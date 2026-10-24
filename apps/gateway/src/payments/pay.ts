@@ -10,6 +10,7 @@ import type { createReconcile, SettlementReceipt } from './reconcile.js';
 import type { Transport } from './transport.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore, Quote } from '@apf/contracts';
+import { redactSensitiveText } from '../log.js';
 
 const PAID_REQUEST_TIMEOUT_MS = 15_000;
 // The most of a merchant's response the gateway reads; reading stops as soon as it is exceeded.
@@ -131,6 +132,16 @@ export function createPay(
       );
     }
     const paymentHeaders = http.encodePaymentSignatureHeader(paymentPayload);
+    const paymentSignature = new Headers(paymentHeaders).get('PAYMENT-SIGNATURE') ?? '';
+    const storedSignature = String(paymentPayload.payload?.signature ?? '');
+    const logSecrets = [
+      walletPrivateKey,
+      quote.payee,
+      row.payee,
+      authorizationJson,
+      paymentSignature,
+      storedSignature,
+    ].filter((value): value is string => value !== undefined && value.length > 0);
 
     // Act on the current row, not the snapshot read above: the reconciler may have resolved it since.
     const current = await store.get(paymentId);
@@ -161,7 +172,9 @@ export function createPay(
       body = await readCapped(res, MAX_PAID_BODY_BYTES);
     } catch (err) {
       // Timeout or dropped connection: the merchant may have settled anyway.
-      console.warn(`[payments] ${paymentId} UNKNOWN: paid request failed: ${describe(err)}`);
+      console.warn(
+        `[payments] ${paymentId} UNKNOWN: paid request failed: ${describe(err, logSecrets)}`,
+      );
       return markUnknown(paymentId);
     }
     if (body === null) {
@@ -181,7 +194,7 @@ export function createPay(
     if (res.status >= 200 && res.status < 300) {
       await store.saveResponse(paymentId, response).catch((err: unknown) => {
         console.error(
-          `[payments] ${paymentId}: could not save the merchant response: ${describe(err)}`,
+          `[payments] ${paymentId}: could not save the merchant response: ${describe(err, logSecrets)}`,
         );
         return false;
       });
@@ -211,15 +224,19 @@ export function createPay(
         if (state === 'FAILED') return { state: 'FAILED', reason: 'resolved by the chain' };
       } catch (err) {
         if (err instanceof SettlementNotRecordedError) {
-          console.error(`[payments] ${err.message}`);
+          console.error(`[payments] ${redactSensitiveText(err.message, logSecrets)}`);
           throw err;
         }
         if (receipt.txHash) {
           // The RPC proved use but recording threw (e.g. a database write error).
-          console.error(`[payments] ${paymentId}: chain settlement not recorded: ${describe(err)}`);
+          console.error(
+            `[payments] ${paymentId}: chain settlement not recorded: ${describe(err, logSecrets)}`,
+          );
           throw err;
         }
-        console.warn(`[payments] ${paymentId}: chain verification failed: ${describe(err)}`);
+        console.warn(
+          `[payments] ${paymentId}: chain verification failed: ${describe(err, logSecrets)}`,
+        );
       }
     }
     return markUnknown(paymentId);
@@ -295,10 +312,13 @@ export function createPay(
   }
 }
 
-function describe(err: unknown): string {
+function describe(err: unknown, secrets: readonly string[] = []): string {
+  let description: string;
   if (err instanceof Error) {
     const cause = err.cause instanceof Error ? ` (${err.cause.message})` : '';
-    return `${err.name}: ${err.message}${cause}`;
+    description = `${err.name}: ${err.message}${cause}`;
+  } else {
+    description = String(err);
   }
-  return String(err);
+  return redactSensitiveText(description, secrets);
 }
