@@ -21,7 +21,7 @@ export default function MandateForm() {
   const [expiryMinutes, setExpiryMinutes] = useState("30");
 
   const [error, setError] = useState("");
-    // The token is shown only right after creation, then cleared for good
+  // The token is shown only right after creation, then cleared for good
   const [newToken, setNewToken] = useState<{ mandateId: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
   // Mandates created since this page loaded (no GET /mandates yet)
@@ -72,7 +72,7 @@ export default function MandateForm() {
         expires_in_ms: minutes * 60 * 1000,
       }),
     });
-        const data = await res.json();
+    const data = await res.json();
     if (!res.ok) return setError("Could not create the mandate.");
     setNewToken({ mandateId: data.mandate_id, token: data.token });
     setCopied(false);
@@ -148,7 +148,7 @@ export default function MandateForm() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       <button type="submit" className="rounded bg-blue-600 px-4 py-1">Create mandate</button>
 
-            {newToken && (
+      {newToken && (
         <div className="rounded border border-amber-500 p-3 text-sm">
           <p className="font-semibold text-amber-400">
             Copy this token now. It won&apos;t be shown again.
