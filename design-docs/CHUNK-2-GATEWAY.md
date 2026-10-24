@@ -1,7 +1,7 @@
 # Chunk 2 · Gateway core
 
 **Size:** large, the largest. **Security-critical:** yes, the most.
-**Read first:** all of `contracts.md`. You also own `packages/contracts`, so you are the contracts gatekeeper.
+**Read first:** all of `final_contracts.md`. You also own `packages/contracts`, so you are the contracts gatekeeper.
 
 ## Your job in one sentence
 
@@ -11,7 +11,7 @@ Build the gateway that every request passes through, in the exact order the cont
 
 | Path | What |
 |---|---|
-| `packages/contracts/` | Types and zod schemas from `contracts.md` section 5, reason-code tables, constants |
+| `packages/contracts/` | Types and zod schemas from `final_contracts.md` section 5, reason-code tables, constants |
 | `apps/gateway/` | Everything **except** `src/payments/` (Chunk 1) and `src/judge/` (Chunk 3) |
 | `apps/gateway/src/db/` | Drizzle schema, migrations, seed, repositories, `PaymentStore` implementation |
 
@@ -39,9 +39,9 @@ Environment variables (`.env`, never committed): `ADMIN_TOKEN`, `DATABASE_PATH`,
 | To | What |
 |---|---|
 | Everyone | `packages/contracts`: all shared types and zod schemas |
-| Chunk 1 | `PaymentStore` implementation (atomic SQL from `contracts.md` section 1) |
-| Chunk 3 | `JudgeContext` objects passed to `buildInput` (type in `contracts.md` section 5) |
-| Chunk 3, Chunk 4 | The HTTP API in `contracts.md` section 2, plus `GET /catalog` |
+| Chunk 1 | `PaymentStore` implementation (atomic SQL from `final_contracts.md` section 1) |
+| Chunk 3 | `JudgeContext` objects passed to `buildInput` (type in `final_contracts.md` section 5) |
+| Chunk 3, Chunk 4 | The HTTP API in `final_contracts.md` section 2, plus `GET /catalog` |
 | Chunk 4 | `/stream` server-sent events |
 
 ### You consume
@@ -55,13 +55,13 @@ Environment variables (`.env`, never committed): `ADMIN_TOKEN`, `DATABASE_PATH`,
 ## Tasks, in order
 
 ### G1 · Contracts package (Fri, right after the team meeting)
-- TypeScript types exactly as `contracts.md` section 5; zod schemas for `PayRequest`, `JudgeOutput`, `Catalog`, admin request bodies.
+- TypeScript types exactly as `final_contracts.md` section 5; zod schemas for `PayRequest`, `JudgeOutput`, `Catalog`, admin request bodies.
 - `REASON_STAGE` and `REASON_ACTION` maps (`deny` or `escalate`) for every reason code.
 - Constants: `NETWORK`, trust thresholds (quarantine 20, human 40, grants 60), trust deltas from the design doc, pre-contact limits.
 - Publish it to the workspace before anyone else writes code against it.
 
 ### G2 · Database (Fri night)
-- Drizzle schema matching `contracts.md` section 1, including every `CHECK`. WAL mode, `busy_timeout = 5000`.
+- Drizzle schema matching `final_contracts.md` section 1, including every `CHECK`. WAL mode, `busy_timeout = 5000`.
 - Seed script: tenant, roles `research` (per-call cap 1,000,000; velocity 20/min; baseline 70) and `bulk`, three demo agents, catalog loaded through Chunk 3's `loadCatalog`.
 - Repositories. The four atomic statements in section 1 are written **exactly** as given.
 - `PaymentStore` with every transition conditional on the current state. Hand it to Chunk 1 by Sat 10 AM with its test suite passing.
@@ -73,7 +73,7 @@ Environment variables (`.env`, never committed): `ADMIN_TOKEN`, `DATABASE_PATH`,
 - `GET /catalog` (admin) returns merchants and endpoints for the dashboard form.
 
 ### G4 · The `/pay` pipeline (Sat morning)
-Implement `contracts.md` section 2, "Pipeline order," as one function with one step per numbered stage. Rules:
+Implement `final_contracts.md` section 2, "Pipeline order," as one function with one step per numbered stage. Rules:
 - **No network call before pre-contact passes.** Chunk 1's `getQuote` is the first network call.
 - The decision row is written as soon as a stage decides. Every response includes `decision_id`.
 - Idempotency: `(mandate_id, idempotency_key)` is unique. A repeat returns the existing decision's current state; if a payment exists and is unresolved, retry `pay` with the same `paymentId`.
@@ -104,12 +104,12 @@ Rules in this order: `NETWORK`, `PAYEE_SWAP` (known endpoint whose stored refere
 ### G8 · Tier 1 grants (Sat midday)
 - Match on mandate, payee, origin, method, endpoint, every subject value in the mandate's list, and option values equal to the grant's stored ones. Price ≤ `max_per_call`. Then the atomic grant-use update; zero rows is `GRANT_EXHAUSTED`.
 - Standing grants: only if the endpoint's merchant is in the mandate's `allowed_merchants`; else log `MERCHANT_NOT_SELECTED` and continue to the judge.
-- **Creating a grant from a judge approval is your job, including the clamping** in `contracts.md` section 4: `max_per_call` = min(judge value, role per-call cap, 2× reference price, 2× this price); `max_total` ≤ remaining budget; expiry ≤ mandate expiry. Payee, origin, method, endpoint and option values come from the request, never the judge.
+- **Creating a grant from a judge approval is your job, including the clamping** in `final_contracts.md` section 4: `max_per_call` = min(judge value, role per-call cap, 2× reference price, 2× this price); `max_total` ≤ remaining budget; expiry ≤ mandate expiry. Payee, origin, method, endpoint and option values come from the request, never the judge.
 - Set the reference price on the first approval for a `(tenant, payee, endpoint)`.
 - Renewal: an exhausted grant sends the next call to the judge once; a new approval issues a new grant under the same reference cap.
 
 ### G9 · Judge call and human queue
-- Build the `JudgeContext` (fields defined in `contracts.md` section 5) and call Chunk 3's `buildInput` then `judge`. Any throw is `JUDGE_ERROR`, which denies.
+- Build the `JudgeContext` (fields defined in `final_contracts.md` section 5) and call Chunk 3's `buildInput` then `judge`. Any throw is `JUDGE_ERROR`, which denies.
 - Escalations create a `pending` decision and an `approval_needed` event. Auto-reject after 10 minutes with `HUMAN_TIMEOUT` and release the reservation.
 - `POST /approvals/:decision_id`: record it; on approval continue to payment and, if `issue_grant`, create a human grant with the same clamps.
 
@@ -138,7 +138,7 @@ Rules in this order: `NETWORK`, `PAYEE_SWAP` (known endpoint whose stored refere
 ## Hard rules
 - No read-then-write on budgets or grant totals. Use the given statements.
 - No empty `catch` blocks. Errors on the payment path deny.
-- Never pass raw URL text, agent text or merchant text into `JudgeContext` fields that `contracts.md` doesn't list.
+- Never pass raw URL text, agent text or merchant text into `JudgeContext` fields that `final_contracts.md` doesn't list.
 - Never log mandate tokens.
 
 ## Integration checkpoints

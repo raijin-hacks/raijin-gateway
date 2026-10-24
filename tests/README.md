@@ -29,7 +29,7 @@ exists or is secure. GatewayEngine is an in-memory reference with a thread lock,
 an inert private random key, and no cryptographic signing or network traffic.
 LLMJudge is a deterministic policy stub, so 100/100 measures mock policy behavior,
 not real LLM accuracy. The stricter curated-payee hard denial follows this test
-request; Design.md also discusses unknown payees reaching the judge.
+request; [the design](../docs/Design.md) also discusses unknown payees reaching the judge.
 
 Before deployment, run equivalent contracts against the real gateway, database
 transactions across processes, signer, timeout enforcement, authenticated
