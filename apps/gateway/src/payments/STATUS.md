@@ -1,0 +1,1 @@
+# Payments status log — append only, newest at bottom
