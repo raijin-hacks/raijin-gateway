@@ -215,6 +215,25 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 **Not yet proven live**
 - Dropped reply + restart and delayed proof on the real chain: these need a merchant failure mode (`/_control drop_after_settle`, P6). Covered by in-process tests with injected timing (Codex, `chunk1/recovery-tests`), labeled as simulated.
 
-## 2026-10-24 · CDP spike (in progress)
-- `@coinbase/cdp-sdk` pinned at 1.59.0 (1.60.0 is under the 7-day release-age rule). Script: `pnpm --filter @apf/gateway payments:cdp-spike`.
-- The runtime credentials work (CDP server account `0x432D…Fe5B` created) but lack `policies#manage`. That fits the plan's separation: policies will be created and attached by a separate admin key (`CDP_ADMIN_API_KEY_ID/SECRET`), and the spike checks that the runtime key can't edit or detach them. Blocked on that admin key.
+## 2026-10-24 · CDP spike: typed-data policy proven, key separation not yet
+Script: `pnpm --filter @apf/gateway payments:cdp-spike`; `@coinbase/cdp-sdk` pinned at 1.59.0 (1.60.0 is under the 7-day release-age rule). CDP server account `0x432D4cEA07086049E9c2125348285A01c084Fe5B`; latest policy `ea9c66eb-d385-45a8-8f89-c9732e362be4`, created and attached by a separate admin key.
+
+**Policy:** accept `signEvmTypedData` only when the verifying contract is Base Sepolia USDC, the type is `TransferWithAuthorization`, `to` is PriceScope `0x0d97…86ae` and `value` <= 10000; reject `signEvmHash`, `signEvmMessage`, `signEvmTransaction`, `sendEvmTransaction`.
+
+**Remote results (real CDP API, not a simulator, not client spendControls):**
+
+| Probe | Result |
+|---|---|
+| 10000 to PriceScope, USDC | signed; signature recovers to the account |
+| value 10001 | 403 policy_violation |
+| payee = attacker | 403 policy_violation |
+| different verifying contract | 403 policy_violation |
+| primaryType Permit | 403 policy_violation |
+| signHash of an over-cap transfer | 403 policy_violation (**allowed in the first run**, before explicit reject rules) |
+| signMessage | 403 policy_violation (**allowed in the first run**) |
+
+**No-match behavior (observed):** within an operation that has rules, a non-matching request is rejected. An operation with **no rules at all is allowed**. So every other signing route needs an explicit reject rule; without one, `signHash` of an over-cap transfer bypasses the typed-data rule.
+
+**Separation: failing.** The runtime key (the gateway's) could `updatePolicy` (replaced the rules) and detach the account policy. Independence needs the runtime key stripped of policy and account-management permissions; only the admin key may hold them. Rerun the spike after that change. Until it passes, there is no "CDP independently constrains a compromised gateway" claim.
+
+**What the policy does NOT check:** HTTP endpoint, subjects, plan or cumulative totals. It is a per-signature cap on payee, value, token and type only.

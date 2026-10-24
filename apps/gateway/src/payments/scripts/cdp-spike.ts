@@ -63,6 +63,23 @@ const policy = await admin.policies.createPolicy({
           },
         ],
       },
+      // An operation with no rule is allowed (found in the first run): reject every other route.
+      { action: 'reject', operation: 'signEvmHash' },
+      {
+        action: 'reject',
+        operation: 'signEvmMessage',
+        criteria: [{ type: 'evmMessage', match: '.*' }],
+      },
+      {
+        action: 'reject',
+        operation: 'signEvmTransaction',
+        criteria: [{ type: 'ethValue', ethValue: '0', operator: '>=' }],
+      },
+      {
+        action: 'reject',
+        operation: 'sendEvmTransaction',
+        criteria: [{ type: 'ethValue', ethValue: '0', operator: '>=' }],
+      },
     ],
   },
 });
@@ -185,7 +202,10 @@ await probe(
 await probe('runtime key edits policies (separation)', 'refused', async () => {
   await cdp.policies.updatePolicy({
     id: policy.id,
-    policy: { description: 'loosened by runtime', rules: [] },
+    policy: {
+      description: 'loosened by runtime',
+      rules: [{ action: 'accept', operation: 'signEvmHash' }],
+    },
   });
   return 'policy updated';
 });
@@ -193,6 +213,11 @@ await probe('runtime key detaches the account policy (separation)', 'refused', a
   await cdp.evm.updateAccount({ address: account.address, update: { accountPolicy: '' } });
   return 'policy detached';
 });
+
+// Whatever the runtime key managed, leave the account protected by the admin-attached policy.
+await admin.evm.updateAccount({ address: account.address, update: { accountPolicy: policy.id } });
+const attached = await admin.evm.getAccount({ address: account.address });
+console.log('final account policies:', JSON.stringify(attached.policies ?? null));
 
 console.table(results);
 console.log(JSON.stringify({ account: account.address, policy: policy.id, results }, null, 2));
