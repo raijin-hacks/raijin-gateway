@@ -11,6 +11,11 @@ import { FIXTURE_CATALOG_PATH, count } from './harness/db.js';
 import { runScript } from './harness/process.js';
 
 const ADMIN_TOKEN = 'process-test-admin-token';
+// Per test, inherited by the nested catalog-admission suites. On CI with 39 isolated
+// workers, single-start cases take 4–5 s; several cases launch two cold tsx children.
+// Allow 30 s for both startups and database assertions without changing the
+// gateway's deadlines or weakening assertions. All other suites keep their defaults.
+const PROCESS_TEST_TIMEOUT_MS = 30_000;
 
 /** A temp database path, a script runner, and cleanup bound to this test. */
 function sandbox({ onTestFinished }: TestContext) {
@@ -29,7 +34,7 @@ function countsIn(path: string) {
   return result;
 }
 
-describe.concurrent('main.ts', () => {
+describe.concurrent('main.ts', { timeout: PROCESS_TEST_TIMEOUT_MS }, () => {
   const invalidCatalogs: [string, (catalog: Catalog) => void][] = [
     ['duplicate ID', (c) => c.merchants.push(structuredClone(c.merchants[0]!))],
     [
