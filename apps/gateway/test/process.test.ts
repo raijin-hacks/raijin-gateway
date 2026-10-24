@@ -101,7 +101,9 @@ describe.concurrent('main.ts', { timeout: PROCESS_TEST_TIMEOUT_MS }, () => {
       CATALOG_PATH: FIXTURE_CATALOG_PATH,
       PORT: '0',
     });
-    const listening = await gateway.waitForLog('gateway listening');
+    // Startup includes tsx compiling the whole gateway; with every test file running in parallel on
+    // a small CI runner it can pass the harness's 10 s default. Use most of the test's 30 s budget.
+    const listening = await gateway.waitForLog('gateway listening', 25_000);
     expect(listening).toMatchObject({ payments_mode: 'mock', judge_mode: 'stub-escalate' });
     const base = `http://127.0.0.1:${String(listening.port)}`;
 
