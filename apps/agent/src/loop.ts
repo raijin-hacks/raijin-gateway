@@ -53,7 +53,7 @@ export async function runAgent(task: string, tools: ReturnType<typeof createTool
           .map((block) => block.text ?? '')
           .join('\n'),
       );
-    if (calls.length > 4) throw new Error('TOOL_CALL_LIMIT');
+    if (calls.length > 8) throw new Error('TOOL_CALL_LIMIT');
     const results = [];
     for (const call of calls) {
       let content: string;
