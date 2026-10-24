@@ -1,6 +1,7 @@
 import { StreamEventSchema, type StreamEvent } from '@apf/contracts';
 import { describe, expect, it, vi } from 'vitest';
-import { createHarness, type Harness } from '../harness/app.js';
+import { createHarness } from '../harness/app.js';
+import { dataLines, openStream } from '../harness/sse.js';
 
 const EVENTS: StreamEvent[] = [
   {
@@ -15,62 +16,57 @@ const EVENTS: StreamEvent[] = [
     at: 1_761_307_200_000,
   },
   { type: 'payment', payment_id: 'pay_1', state: 'SETTLED', amount: 10_000, at: 1_761_307_200_001 },
+  {
+    type: 'trust',
+    session_id: 'ses_1',
+    agent_id: 'agt_pricing',
+    session_trust: 55,
+    agent_trust: 67,
+    cause: 'JUDGE_OFF_TASK',
+    at: 1_761_307_200_002,
+  },
+  { type: 'approval_needed', decision_id: 'dec_2', mandate_id: 'mnd_1', explanation: null, at: 1 },
 ];
 
-/** Opens /stream and returns a reader that collects the raw SSE text. */
-async function openStream(h: Harness) {
-  const listenersBefore = h.bus.listenerCount();
-  const res = await h.admin('/stream');
-  expect(res.status).toBe(200);
-  expect(res.headers.get('content-type')).toMatch(/^text\/event-stream/);
-  const body = res.body;
-  if (!body) throw new Error('No response body');
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let text = '';
-  // The handler subscribes asynchronously; wait until it has.
-  await vi.waitFor(() => expect(h.bus.listenerCount()).toBe(listenersBefore + 1));
-
-  return {
-    listenersBefore,
-    /** Reads until `done(text)` holds, failing after a second. */
-    async readUntil(done: (text: string) => boolean): Promise<string> {
-      const deadline = Date.now() + 1_000;
-      while (!done(text)) {
-        if (Date.now() > deadline) throw new Error(`Timed out; stream so far: ${text}`);
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        text += decoder.decode(chunk.value, { stream: true });
-      }
-      return text;
-    },
-    close: () => reader.cancel(),
-  };
-}
-
-const dataLines = (text: string) =>
-  text
-    .split('\n')
-    .filter((line) => line.startsWith('data: '))
-    .map((line) => JSON.parse(line.slice('data: '.length)) as unknown);
-
 describe('GET /stream', () => {
-  it('sends each published event as one SSE message, in order', async () => {
+  it('sends each published event as one plain SSE message, in order', async () => {
     const h = createHarness();
     const stream = await openStream(h);
     for (const event of EVENTS) h.bus.publish(event);
     const text = await stream.readUntil((t) => dataLines(t).length === EVENTS.length);
     expect(dataLines(text).map((e) => StreamEventSchema.parse(e))).toEqual(EVENTS);
-    // Plain messages (no `event:` name) so a browser EventSource's onmessage receives them.
+    // No `event:` names, so a browser EventSource's onmessage receives every message.
     expect(text).not.toMatch(/^event:/m);
     await stream.close();
+  });
+
+  it('does not replay events published before the client connected', async () => {
+    const h = createHarness();
+    h.bus.publish(EVENTS[0] as StreamEvent);
+    const stream = await openStream(h);
+    h.bus.publish(EVENTS[1] as StreamEvent);
+    const text = await stream.readUntil((t) => dataLines(t).length >= 1);
+    expect(dataLines(text)).toEqual([EVENTS[1]]);
+    await stream.close();
+  });
+
+  it('sends every event to every connected client', async () => {
+    const h = createHarness();
+    const a = await openStream(h);
+    const b = await openStream(h);
+    for (const event of EVENTS) h.bus.publish(event);
+    for (const stream of [a, b]) {
+      const text = await stream.readUntil((t) => dataLines(t).length === EVENTS.length);
+      expect(dataLines(text)).toEqual(EVENTS);
+      await stream.close();
+    }
   });
 
   it('sends a heartbeat comment on the configured interval', async () => {
     const h = createHarness({ streamHeartbeatMs: 10 });
     const stream = await openStream(h);
-    const text = await stream.readUntil((t) => t.includes(': heartbeat'));
-    expect(text).toContain(': heartbeat\n\n');
+    const text = await stream.readUntil((t) => (t.match(/: heartbeat\n\n/g) ?? []).length >= 2);
+    expect(dataLines(text)).toEqual([]);
     await stream.close();
   });
 
@@ -79,5 +75,23 @@ describe('GET /stream', () => {
     const stream = await openStream(h);
     await stream.close();
     await vi.waitFor(() => expect(h.bus.listenerCount()).toBe(stream.listenersBefore));
+  });
+
+  it('drops connections whose write fails, logs each, and serves new connections normally', async () => {
+    const h = createHarness();
+    const healthy = await openStream(h);
+    const broken = await openStream(h);
+    const before = h.bus.listenerCount();
+    // An event that cannot be serialized makes every connection's write fail...
+    h.bus.publish({ ...EVENTS[1], amount: 10n } as unknown as StreamEvent);
+    await vi.waitFor(() => expect(h.bus.listenerCount()).toBe(before - 2));
+    expect(h.logRecords().filter((r) => r.msg === 'stream write failed')).toHaveLength(2);
+    await healthy.close();
+    await broken.close();
+    // ...and a fresh connection afterwards works normally.
+    const fresh = await openStream(h);
+    h.bus.publish(EVENTS[0] as StreamEvent);
+    expect(dataLines(await fresh.readUntil((t) => dataLines(t).length === 1))).toEqual([EVENTS[0]]);
+    await fresh.close();
   });
 });

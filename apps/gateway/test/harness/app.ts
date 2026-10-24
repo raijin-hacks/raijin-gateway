@@ -2,6 +2,7 @@
 // captured logs and stream events. Later phases add fake payments and a scripted judge.
 import {
   StreamEventSchema,
+  type Catalog,
   type CreateMandateRequest,
   type CreateMandateResponse,
   type StreamEvent,
@@ -11,10 +12,10 @@ import { createApp } from '../../src/app.js';
 import { createEventBus } from '../../src/bus.js';
 import type { Config } from '../../src/config.js';
 import type { Deps } from '../../src/deps.js';
-import { createLogger } from '../../src/log.js';
 import { loadCatalog } from '../../src/stubs/catalog-stub.js';
 import { TestClock } from './clock.js';
 import { FIXTURE_CATALOG_PATH, seededDb } from './db.js';
+import { captureLogger } from './log.js';
 
 export const ADMIN_TOKEN = 'test-admin-token-not-a-real-secret';
 
@@ -32,11 +33,17 @@ type RequestOptions = Omit<RequestInit, 'headers'> & {
   headers?: Record<string, string>;
 };
 
-export function createHarness(overrides: Partial<Config> = {}) {
+export function createHarness(
+  overrides: Partial<Config> = {},
+  { catalog = loadCatalog(FIXTURE_CATALOG_PATH) }: { catalog?: Catalog } = {},
+) {
   const clock = new TestClock();
   const { db } = seededDb(clock);
-  const logs: string[] = [];
-  const log = createLogger({ write: (line) => logs.push(line) }, { clock, secrets: [ADMIN_TOKEN] });
+  const {
+    log,
+    lines: logs,
+    records: logRecords,
+  } = captureLogger({ clock, secrets: [ADMIN_TOKEN] });
   const bus = createEventBus(log);
   const events: StreamEvent[] = [];
   // Every published event must match the contract exactly.
@@ -52,7 +59,7 @@ export function createHarness(overrides: Partial<Config> = {}) {
     streamHeartbeatMs: 15_000,
     ...overrides,
   };
-  const deps: Deps = { db, clock, config, catalog: loadCatalog(FIXTURE_CATALOG_PATH), bus, log };
+  const deps: Deps = { db, clock, config, catalog, bus, log };
   const app = createApp(deps);
   const issuedTokens: string[] = [];
 
@@ -68,20 +75,43 @@ export function createHarness(overrides: Partial<Config> = {}) {
   const admin = (path: string, init: RequestOptions = {}) =>
     request(path, { token: ADMIN_TOKEN, ...init });
 
-  async function createMandate(
-    overrides: Partial<CreateMandateRequest> = {},
-  ): Promise<CreateMandateResponse> {
-    const res = await admin('/mandates', {
+  /** POST /mandates with MANDATE_BODY plus `patch` (raw string bodies go through unchanged). */
+  const postMandate = (patch: Record<string, unknown> | string = {}, token = ADMIN_TOKEN) =>
+    request('/mandates', {
       method: 'POST',
-      body: JSON.stringify({ ...MANDATE_BODY, ...overrides }),
+      token,
+      body: typeof patch === 'string' ? patch : JSON.stringify({ ...MANDATE_BODY, ...patch }),
     });
+
+  async function createMandate(
+    patch: Partial<CreateMandateRequest> = {},
+  ): Promise<CreateMandateResponse> {
+    const res = await postMandate(patch);
     expect(res.status).toBe(201);
     const body = (await res.json()) as CreateMandateResponse;
     issuedTokens.push(body.token);
     return body;
   }
 
-  return { app, deps, db, clock, bus, events, logs, issuedTokens, request, admin, createMandate };
+  const closeMandate = (mandateId: string) =>
+    admin(`/mandates/${mandateId}/close`, { method: 'POST', body: '{}' });
+
+  return {
+    app,
+    deps,
+    db,
+    clock,
+    bus,
+    events,
+    logs,
+    logRecords,
+    issuedTokens,
+    request,
+    admin,
+    postMandate,
+    createMandate,
+    closeMandate,
+  };
 }
 
 export type Harness = ReturnType<typeof createHarness>;

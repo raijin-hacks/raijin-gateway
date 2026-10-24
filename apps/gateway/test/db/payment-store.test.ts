@@ -5,6 +5,7 @@ import {
   createMandate,
   createReservedPayment,
   mandateMoney,
+  one,
   seededDb,
   tenantCommitted,
 } from '../harness/db.js';
@@ -45,18 +46,30 @@ function call(store: PaymentStore, method: Method, id: string): Promise<boolean>
   return store[method](id);
 }
 
-async function paymentIn(state: PaymentState) {
+/** A seeded database with one mandate, a store, and a way to make payments in any state. */
+function setup() {
   const { db, clock } = seededDb();
   const store = createPaymentStore(db, clock);
   const mandate = createMandate(db, clock, { budget: 1_000_000 });
-  const id = createReservedPayment(db, clock, mandate, AMOUNT);
-  for (const step of PATH[state]) expect(await call(store, step, id)).toBe(true);
-  const snapshot = async () => ({
-    row: await store.get(id),
+  const paymentIn = async (state: PaymentState) => {
+    const id = createReservedPayment(db, clock, mandate, AMOUNT);
+    for (const step of PATH[state]) expect(await call(store, step, id)).toBe(true);
+    return id;
+  };
+  /** The payment row (with tx_hash), the mandate's money and the tenant's total for today. */
+  const snapshot = async (id: string) => ({
+    row: {
+      ...(await store.get(id)),
+      ...one<{ tx_hash: string | null; updated_at: number }>(
+        db,
+        'SELECT tx_hash, updated_at FROM payments WHERE id = ?',
+        id,
+      ),
+    },
     money: mandateMoney(db, mandate),
     tenant: tenantCommitted(db, clock),
   });
-  return { db, clock, store, id, mandate, snapshot };
+  return { db, clock, store, mandate, paymentIn, snapshot };
 }
 
 describe('PaymentStore transition matrix', () => {
@@ -65,65 +78,68 @@ describe('PaymentStore transition matrix', () => {
   );
 
   it.each(cases)('%s from %s', async (method, from, to) => {
-    const { store, id, snapshot } = await paymentIn(from);
-    const before = await snapshot();
+    const { store, paymentIn, snapshot } = setup();
+    const id = await paymentIn(from);
+    const before = await snapshot(id);
 
     const changed = await call(store, method, id);
-    const after = await snapshot();
+    const after = await snapshot(id);
 
     expect(changed).toBe(to !== null);
     if (to === null) {
       expect(after).toEqual(before);
       return;
     }
-    expect(after.row?.state).toBe(to);
+    expect(after.row.state).toBe(to);
+    const moved = {
+      spent: after.money.spent - before.money.spent,
+      reserved: after.money.reserved - before.money.reserved,
+    };
     if (method === 'settle') {
-      expect(after.money).toEqual({
-        spent: before.money.spent + AMOUNT,
-        reserved: before.money.reserved - AMOUNT,
-      });
+      expect(moved).toEqual({ spent: AMOUNT, reserved: -AMOUNT });
       expect(after.tenant).toBe(before.tenant);
+      expect(after.row.tx_hash).toBe('0xtxhash');
     } else if (method === 'fail') {
-      expect(after.money).toEqual({
-        spent: before.money.spent,
-        reserved: before.money.reserved - AMOUNT,
-      });
+      expect(moved).toEqual({ spent: 0, reserved: -AMOUNT });
       expect(after.tenant).toBe(before.tenant - AMOUNT);
     } else {
-      expect(after.money).toEqual(before.money);
+      expect(moved).toEqual({ spent: 0, reserved: 0 });
       expect(after.tenant).toBe(before.tenant);
     }
   });
 });
 
 describe('PaymentStore', () => {
-  it('moves money exactly once however often settle or fail is called', async () => {
-    const { store, id, snapshot } = await paymentIn('SUBMITTED');
-    expect(await store.settle(id, '0xtx')).toBe(true);
-    const settled = await snapshot();
-    expect(await store.settle(id, '0xtx')).toBe(false);
-    expect(await store.fail(id)).toBe(false);
-    expect(await snapshot()).toEqual(settled);
-    expect(settled.money).toEqual({ spent: AMOUNT, reserved: 0 });
+  it.each(METHODS)('%s on an unknown payment changes nothing', async (method) => {
+    const { store, mandate, db } = setup();
+    expect(await call(store, method, 'pay_missing')).toBe(false);
+    expect(mandateMoney(db, mandate)).toEqual({ spent: 0, reserved: 0 });
   });
 
-  it('never settles a payment that already failed', async () => {
-    const { store, id, snapshot } = await paymentIn('UNKNOWN');
-    expect(await store.fail(id)).toBe(true);
-    const failed = await snapshot();
-    expect(await store.settle(id, '0xtx')).toBe(false);
-    expect(await snapshot()).toEqual(failed);
-    expect(failed.money).toEqual({ spent: 0, reserved: 0 });
+  it('returns null for an unknown payment', async () => {
+    expect(await setup().store.get('pay_missing')).toBeNull();
   });
 
-  it('records the signed authorization and returns every field', async () => {
-    const { store, id, clock } = await paymentIn('RESERVED');
-    clock.advance(1_000);
-    expect(await store.markSigned(id, SIGNATURE)).toBe(true);
-    expect(await store.get(id)).toMatchObject({
+  it('returns a reserved payment with no signature yet', async () => {
+    const { store, mandate, paymentIn } = setup();
+    const id = await paymentIn('RESERVED');
+    expect(await store.get(id)).toEqual({
       id,
+      mandate_id: mandate.mandateId,
       amount: AMOUNT,
       payee: '0x1111111111111111111111111111111111111111',
+      state: 'RESERVED',
+      nonce: null,
+      valid_before: null,
+      authorization_json: null,
+    });
+  });
+
+  it('records the signed authorization and never overwrites it', async () => {
+    const { store, paymentIn } = setup();
+    const id = await paymentIn('SIGNED');
+    expect(await store.markSigned(id, { ...SIGNATURE, nonce: '0xother' })).toBe(false);
+    expect(await store.get(id)).toMatchObject({
       state: 'SIGNED',
       nonce: SIGNATURE.nonce,
       valid_before: SIGNATURE.validBefore,
@@ -131,61 +147,86 @@ describe('PaymentStore', () => {
     });
   });
 
-  it('stores the settlement tx hash', async () => {
-    const { db, store, id } = await paymentIn('SUBMITTED');
-    await store.settle(id, '0xfeed');
-    const row = db.sqlite.prepare('SELECT tx_hash FROM payments WHERE id = ?').get(id);
-    expect(row).toEqual({ tx_hash: '0xfeed' });
+  it('moves money exactly once however often settle or fail is called', async () => {
+    const { store, paymentIn, snapshot } = setup();
+    const id = await paymentIn('SUBMITTED');
+    expect(await store.settle(id, '0xtx')).toBe(true);
+    const settled = await snapshot(id);
+    expect(await store.settle(id, '0xother')).toBe(false);
+    expect(await store.fail(id)).toBe(false);
+    expect(await snapshot(id)).toEqual(settled);
+    expect(settled.money).toEqual({ spent: AMOUNT, reserved: 0 });
   });
 
-  it('returns null for an unknown payment', async () => {
-    const { store } = await paymentIn('RESERVED');
-    expect(await store.get('pay_missing')).toBeNull();
+  it('never settles a payment that already failed', async () => {
+    const { store, paymentIn, snapshot } = setup();
+    const id = await paymentIn('UNKNOWN');
+    expect(await store.fail(id)).toBe(true);
+    const failed = await snapshot(id);
+    expect(await store.settle(id, '0xtx')).toBe(false);
+    expect(await snapshot(id)).toEqual(failed);
+    expect(failed.money).toEqual({ spent: 0, reserved: 0 });
   });
 
-  it('lists only payments the reconciler must resolve', async () => {
-    const { db, clock } = seededDb();
-    const store = createPaymentStore(db, clock);
-    const mandate = createMandate(db, clock, { budget: 1_000_000 });
-    const ids = Object.fromEntries(
-      await Promise.all(
-        STATES.map(async (state) => {
-          const id = createReservedPayment(db, clock, mandate, AMOUNT);
-          for (const step of PATH[state]) await call(store, step, id);
-          return [state, id] as const;
-        }),
-      ),
-    ) as Record<PaymentState, string>;
-    expect((await store.listUnresolved()).sort()).toEqual(
-      [ids.SIGNED, ids.SUBMITTED, ids.UNKNOWN].sort(),
-    );
+  it('lets exactly one of a racing settle and fail win', async () => {
+    const { store, paymentIn, snapshot } = setup();
+    const id = await paymentIn('UNKNOWN');
+    const results = await Promise.all([store.settle(id, '0xtx'), store.fail(id)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const { money } = await snapshot(id);
+    expect(money.reserved).toBe(0);
+    expect(money.spent).toBe(results[0] ? AMOUNT : 0);
   });
 
-  it('rolls the payment back if moving the money fails mid-settle', async () => {
-    const { db, store, id, snapshot } = await paymentIn('SUBMITTED');
-    const before = await snapshot();
-    db.sqlite.exec(
-      "CREATE TRIGGER block_spend BEFORE UPDATE OF spent ON mandates BEGIN SELECT RAISE(ABORT, 'blocked'); END",
-    );
-    await expect(store.settle(id, '0xtx')).rejects.toThrow('blocked');
-    expect(await snapshot()).toEqual(before);
-  });
-
-  it('rolls the payment back if releasing the money fails mid-fail', async () => {
-    const { db, store, id, snapshot } = await paymentIn('UNKNOWN');
-    const before = await snapshot();
-    db.sqlite.exec(
-      "CREATE TRIGGER block_release BEFORE UPDATE OF reserved ON mandates BEGIN SELECT RAISE(ABORT, 'blocked'); END",
-    );
-    await expect(store.fail(id)).rejects.toThrow('blocked');
-    expect(await snapshot()).toEqual(before);
+  it('lists only payments the reconciler must resolve, oldest update first', async () => {
+    const { clock, store, paymentIn } = setup();
+    const ids: Partial<Record<PaymentState, string>> = {};
+    for (const state of [
+      'UNKNOWN',
+      'RESERVED',
+      'SETTLED',
+      'SIGNED',
+      'FAILED',
+      'SUBMITTED',
+    ] as const) {
+      ids[state] = await paymentIn(state);
+      clock.advance(1_000);
+    }
+    expect(await store.listUnresolved()).toEqual([ids.UNKNOWN, ids.SIGNED, ids.SUBMITTED]);
   });
 
   it('stamps updated_at from the clock on every transition', async () => {
-    const { db, clock, store, id } = await paymentIn('RESERVED');
-    clock.advance(5_000);
-    await store.markSigned(id, SIGNATURE);
-    const row = db.sqlite.prepare('SELECT updated_at FROM payments WHERE id = ?').get(id);
-    expect(row).toEqual({ updated_at: clock.now() });
+    const { clock, store, paymentIn, snapshot } = setup();
+    const id = await paymentIn('RESERVED');
+    for (const step of ['markSigned', 'markSubmitted', 'markUnknown', 'settle'] as const) {
+      clock.advance(5_000);
+      await call(store, step, id);
+      expect((await snapshot(id)).row.updated_at).toBe(clock.now());
+    }
+  });
+
+  it.each([
+    ['settle', 'spent', 'SUBMITTED'],
+    ['fail', 'reserved', 'UNKNOWN'],
+  ] as const)('rolls %s back entirely if moving the money fails', async (method, column, from) => {
+    const { db, store, paymentIn, snapshot } = setup();
+    const id = await paymentIn(from);
+    const before = await snapshot(id);
+    db.sqlite.exec(
+      `CREATE TRIGGER block BEFORE UPDATE OF ${column} ON mandates BEGIN SELECT RAISE(ABORT, 'blocked'); END`,
+    );
+    await expect(call(store, method, id)).rejects.toThrow('blocked');
+    expect(await snapshot(id)).toEqual(before);
+  });
+
+  it('rolls fail back entirely if releasing the tenant total fails', async () => {
+    const { db, store, paymentIn, snapshot } = setup();
+    const id = await paymentIn('SIGNED');
+    const before = await snapshot(id);
+    db.sqlite.exec(
+      "CREATE TRIGGER block BEFORE UPDATE ON tenant_daily BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+    );
+    await expect(store.fail(id)).rejects.toThrow('blocked');
+    expect(await snapshot(id)).toEqual(before);
   });
 });
