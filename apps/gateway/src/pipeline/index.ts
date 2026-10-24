@@ -26,6 +26,7 @@ import {
   grantHit,
   issueGrant,
   loadAgent,
+  newPayeeLimit,
   payeeFacts,
   releaseUnsigned,
   roleFor,
@@ -243,6 +244,15 @@ export function createPipeline(deps: PipelineDependencies) {
         const d = decision(id)!;
         const agent = loadAgent(deps, d.mandate_id, d.session_id);
         if (!active(agent, deps.clock.now())) return false;
+        const reviewed = JSON.parse(workflow(deps.db, id)!.reviewed_json) as ReasonCode[];
+        if (stage !== 'human' && agent.session.trust < 40) {
+          refusal = 'TRUST_REQUIRES_HUMAN';
+          return false;
+        }
+        if (newPayeeLimit(deps, agent, quote.payee, reviewed)) {
+          refusal = 'NEW_PAYEE_LIMIT';
+          return false;
+        }
         const role = roleFor(deps, agent);
         if (quote.amount > role.per_call_cap) {
           refusal = 'PER_CALL_CAP';
@@ -320,9 +330,13 @@ export function createPipeline(deps: PipelineDependencies) {
       return finish(
         id,
         owner,
-        refusalCode === 'NO_MANDATE' ? 'precontact' : 'tier0',
+        refusalCode === 'NO_MANDATE'
+          ? 'precontact'
+          : refusalCode === 'TRUST_REQUIRES_HUMAN'
+            ? 'human'
+            : 'tier0',
         [refusalCode],
-        refusalCode === 'REFERENCE_PRICE',
+        REASON_ACTION[refusalCode] === 'escalate',
       );
     publish(id, true); // Approval is durable before the only invocation of pay.
     const p = payment(id)!;

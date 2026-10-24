@@ -1,4 +1,14 @@
 {
   "files": [],
-  "references": [{ "path": "packages/contracts" }, { "path": "apps/gateway" }]
+  "references": [
+    {
+      "path": "packages/contracts"
+    },
+    {
+      "path": "apps/gateway"
+    },
+    {
+      "path": "apps/agent"
+    }
+  ]
 }

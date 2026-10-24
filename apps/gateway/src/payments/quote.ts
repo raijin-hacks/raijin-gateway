@@ -1,10 +1,14 @@
 // P3 · getQuote: ask the merchant for its price without paying.
 import type { Address, HttpMethod, Quote, QuoteCode } from '@apf/contracts';
+import { DestinationError } from './destination.js';
 import { readCapped } from './read-capped.js';
+import type { Transport } from './transport.js';
 
 export const NETWORK = 'eip155:84532';
 // Circle's test USDC on Base Sepolia.
 const DEFAULT_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+// Five minutes, matching the demo requirements; merchant input cannot extend this policy.
+export const MAX_AUTHORIZATION_SECONDS = 300;
 const TIMEOUT_MS = 3_000;
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -22,15 +26,23 @@ export class QuoteError extends Error {
   }
 }
 
-export async function getQuote(canonicalUrl: string, method: HttpMethod): Promise<Quote> {
+// `transport` is the pinned connection (transport.ts) in the gateway; tests may pass plain fetch.
+export async function getQuote(
+  canonicalUrl: string,
+  method: HttpMethod,
+  transport: Transport,
+): Promise<Quote> {
   // One signal for the whole exchange, so a body that stalls after the headers also times out.
   const signal = AbortSignal.timeout(TIMEOUT_MS);
 
   let res: Response;
   try {
     // A redirect could point the gateway at an attacker: never follow it.
-    res = await fetch(canonicalUrl, { method, redirect: 'manual', signal });
+    res = await transport(canonicalUrl, { method, redirect: 'manual', signal });
   } catch (err) {
+    if (err instanceof DestinationError) {
+      throw new QuoteError('QUOTE_INVALID', `destination refused: ${err.message}`, { cause: err });
+    }
     throw new QuoteError('QUOTE_FAILED', `quote request failed: ${describe(err)}`, { cause: err });
   }
 
@@ -117,7 +129,22 @@ function selectRequirements(paymentRequired: unknown): Record<string, unknown> {
   if (typeof match.payTo !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(match.payTo)) {
     throw new QuoteError('QUOTE_INVALID', `payTo ${JSON.stringify(match.payTo)} is not an address`);
   }
+  validateTimeout(match.maxTimeoutSeconds);
   return match;
+}
+
+export function validateTimeout(value: unknown): asserts value is number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > MAX_AUTHORIZATION_SECONDS
+  ) {
+    throw new QuoteError(
+      'QUOTE_INVALID',
+      `maxTimeoutSeconds must be an integer in 1..${MAX_AUTHORIZATION_SECONDS}`,
+    );
+  }
 }
 
 // Release the connection without reading a body we don't need.

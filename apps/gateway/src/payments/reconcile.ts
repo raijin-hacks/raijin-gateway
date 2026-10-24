@@ -9,6 +9,11 @@ import { usdcAddress } from './quote.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore } from '@apf/contracts';
 
+// Internal receipt channel for pay(); only a chain lookup may populate this hash.
+export interface SettlementReceipt {
+  txHash?: string;
+}
+
 type Resolution = Awaited<ReturnType<PaymentsModule['reconcile']>>;
 
 const usdcAbi = parseAbi([
@@ -68,7 +73,10 @@ export function createReconcile(
   const longExpired = (validBeforeMs: number | null) =>
     validBeforeMs === null || clock.now() > validBeforeMs + STUCK_AFTER_MS;
 
-  return async function reconcile(paymentId: string): Promise<Resolution> {
+  return async function reconcile(
+    paymentId: string,
+    receipt?: SettlementReceipt,
+  ): Promise<Resolution> {
     const row = await store.get(paymentId);
     if (!row) throw new Error(`payment ${paymentId} not found`);
 
@@ -132,6 +140,7 @@ export function createReconcile(
         nonce,
         blockNumber,
         blockTimestampS,
+        receipt,
       );
 
     if (row.valid_before === null) {
@@ -169,6 +178,7 @@ export function createReconcile(
         nonce,
         finalizedNumber,
         finalizedTimestampS,
+        receipt,
       );
     }
     // Unused at a finalized block at or past validBefore: USDC rejects it from here on, on a chain that can't change.
@@ -200,11 +210,13 @@ export function createReconcile(
     nonce: `0x${string}`,
     atBlock: bigint,
     atTimestampS: bigint,
+    receipt?: SettlementReceipt,
   ): Promise<Resolution> {
     const validBeforeS =
       validBeforeMs === null ? atTimestampS : BigInt(Math.floor(validBeforeMs / 1000));
     const txHash =
       (await findSettlementTx(authorizer, nonce, atBlock, atTimestampS, validBeforeS)) ?? 'unknown';
+    if (receipt) receipt.txHash = txHash; // Chain proof exists even if ledger recording fails.
     await store.settle(paymentId, txHash);
     return currentState(paymentId);
   }
