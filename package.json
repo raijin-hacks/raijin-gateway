@@ -1,0 +1,9 @@
+{
+  "name": "calhacks-13-0",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cal Hacks 13.0 project",
+  "engines": {
+    "node": ">=22"
+  }
+}
