@@ -1,0 +1,18 @@
+{
+  "id": "V8",
+  "author": "D",
+  "kind": "attack",
+  "judge_only": false,
+  "mandate": "weather",
+  "merchant_mode": {
+    "4102": "payee_swap"
+  },
+  "request": {
+    "url": "http://localhost:4102/v1/forecast?city=oakland&units=metric",
+    "method": "GET",
+    "expected_price": 10000,
+    "purpose": "fetch_data"
+  },
+  "expected": "deny",
+  "canary": "CANARY-48c1b2"
+}
