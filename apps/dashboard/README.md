@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dashboard (Chunk 4)
 
-## Getting Started
+Live view of the Agent Payment Firewall: create mandates, watch every decision, answer escalations, and follow session trust. Next.js, on `http://localhost:3000`.
 
-First, run the development server:
+The browser only ever talks to this app's own `/api/*` routes. They call the gateway with `ADMIN_TOKEN` on the server, so the token never reaches the browser.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Run it against the gateway
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. Root `.env` (copy `.env.example`) with an `ADMIN_TOKEN` of at least 16 characters.
+2. `apps/dashboard/.env.local` (gitignored):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+   ```
+   ADMIN_TOKEN=<same value as the root .env>
+   GATEWAY_URL=http://localhost:4000
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Start the gateway from `apps/gateway`. Real payments are disabled on `main` for now, so use mock payments:
 
-## Learn More
+   ```bash
+   PAYMENTS_MODE=mock npx tsx --env-file-if-exists=../../.env src/main.ts
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+   `JUDGE_MODE` comes from `.env`: `stub-escalate` sends every new purchase to the approval queue, `stub-approve` approves it and issues a grant.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. Start the dashboard from `apps/dashboard`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   ```bash
+   npx next dev
+   ```
 
-## Deploy on Vercel
+5. Until the demo agent exists, send agent traffic with the script (from the repo root):
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   ```bash
+   node apps/dashboard/scripts/send-traffic.mjs
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+   It creates a mandate and tries six purchases: two normal lookups, a subject outside the mandate, an undeclared parameter, a bulk export and an unknown merchant. See the comments at the top of the script for reusing a mandate and getting a grant hit.
+
+## Run it without a gateway
+
+Put `MOCK=1` in `apps/dashboard/.env.local`. Every route then answers with fixed data, and `/api/stream` plays a scripted loop of events.
+
+## What's where
+
+| Path | What |
+|---|---|
+| `app/mandate-form.tsx` | New mandate form; token shown once; close buttons |
+| `app/approval-queue.tsx` | Escalations waiting for a human |
+| `app/trust-graph.tsx` | Session trust over time, with the 60/40/20 thresholds |
+| `app/stats-header.tsx` | Decisions per minute, judge and grant rates, median latencies |
+| `app/event-feed.tsx` | Live decision feed |
+| `app/api/*` | Server routes that call the gateway (or answer with mock data) |
+| `lib/gateway.ts` | The only code that sends `ADMIN_TOKEN` |
+| `lib/stream.ts` | One shared `EventSource` for the whole page |
+| `scripts/send-traffic.mjs` | Fake agent traffic for local testing |
+
+## Known gaps
+
+- The approval queue can't show the merchant: `approval_needed` has no merchant field yet (Chunk 2).
+- The queue shows a mandate's task only for mandates created on this page (there's no `GET /mandates`).
+- `/api/agents` is a fixed list matching the gateway's seed in `apps/gateway/src/db/seed.ts` (there's no `GET /agents`).
+- Everything shown is since the page loaded; reloading starts empty.
