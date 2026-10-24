@@ -41,7 +41,21 @@ export function createTokenClient(
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) throw new Error('GATEWAY_REJECTED');
-      return await response.json();
+      const reader = response.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      if (reader)
+        for (;;) {
+          const next = await reader.read();
+          if (next.done) break;
+          size += next.value.byteLength;
+          if (size > 256000) {
+            await reader.cancel();
+            throw new Error('GATEWAY_RESPONSE_TOO_LARGE');
+          }
+          chunks.push(next.value);
+        }
+      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
     } catch {
       // Never propagate transport exceptions, response bodies, bearer values or URLs.
       throw new Error('GATEWAY_REQUEST_FAILED');

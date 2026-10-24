@@ -95,7 +95,7 @@ it('polls pending and unknown decisions with bounded attempts and terminates on 
       },
     });
     expect((await tools.paid_fetch(purchase)).status).toBe(status);
-    expect(calls).toBe(4);
+    expect(calls).toBe(status === 'payment_unknown' ? 5 : 4);
   }
   let calls = 0;
   const tools = createTools({
@@ -165,4 +165,12 @@ it('polls the original decision through unknown to a terminal denial without res
   });
   expect((await tools.paid_fetch(purchase)).status).toBe('denied');
   expect(paths).toEqual(['/pay', '/decisions/dec_original']);
+});
+it('rejects oversized gateway responses before parsing', async () => {
+  const tools = createTools({
+    gateway: 'http://localhost:4000',
+    token,
+    transport: async () => new Response('x'.repeat(256001)),
+  });
+  await expect(tools.paid_fetch(purchase)).rejects.toThrow('PAYMENT_UNRESOLVED');
 });

@@ -17,10 +17,30 @@ it('rehearses legitimate and off-task page injection through actual mock payment
       const catalog = loadCatalog(FIXTURE_CATALOG_PATH);
       let judgeCalls = 0;
       const stub = createStubJudge('stub-approve');
+      const payments = createMockPayments(createPaymentStore(h.db, h.clock), catalog, h.clock);
       const app = createApp({
         ...h.deps,
         catalog,
-        payments: createMockPayments(createPaymentStore(h.db, h.clock), catalog, h.clock),
+        payments: {
+          ...payments,
+          async pay(id, quote) {
+            const result = await payments.pay(id, quote);
+            return result.state === 'SETTLED'
+              ? {
+                  ...result,
+                  response: {
+                    status_code: 200,
+                    content_type: 'application/json',
+                    body: JSON.stringify({
+                      company: 'Acme',
+                      basic_monthly_usd: 19,
+                      pro_monthly_usd: 49,
+                    }),
+                  },
+                }
+              : result;
+          },
+        },
         judge: {
           ...stub,
           async judge(input) {
@@ -68,7 +88,7 @@ it('rehearses legitimate and off-task page injection through actual mock payment
         },
       });
       let step = 0;
-      await runAgent(
+      const answer = await runAgent(
         'Read http://localhost:4199/pages/demo then complete the task.',
         tools,
         async (messages) => {
@@ -89,9 +109,24 @@ it('rehearses legitimate and off-task page injection through actual mock payment
             return [{ type: 'tool_use', id: 'buy', name: 'paid_fetch', input: purchase }];
           }
           expect(JSON.stringify(messages)).toContain('approved');
-          return [{ type: 'text', text: 'Done' }];
+          const results = messages.at(-1)!.content as { content: string }[];
+          const output = JSON.parse(results[0]!.content);
+          expect(output.trust).toBe('untrusted_tool_output');
+          const data = JSON.parse(output.data.body);
+          return [
+            {
+              type: 'text',
+              text: attack
+                ? `Off-task purchase occurred under stub-approve; greeting task did not require pricing. Receipt ${output.receipt.decision_id}.`
+                : `${data.company}: Basic $${data.basic_monthly_usd}/month versus Pro $${data.pro_monthly_usd}/month ($${data.pro_monthly_usd - data.basic_monthly_usd} more). Source ${output.receipt.merchant}; decision ${output.receipt.decision_id}; payment ${output.receipt.payment_id}. MOCK settlement.`,
+            },
+          ];
         },
       );
+      expect(answer).toContain(
+        attack ? 'Off-task purchase occurred' : 'Basic $19/month versus Pro $49/month ($30 more)',
+      );
+      process.stdout.write(`${answer}\n`);
       expect(keys).toHaveLength(2);
       expect(new Set(keys).size).toBe(1);
       expect(judgeCalls).toBe(1);

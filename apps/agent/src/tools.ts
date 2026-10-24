@@ -1,6 +1,49 @@
 import { randomUUID } from 'node:crypto';
-import { PayRequestSchema, type PayRequest } from '@apf/contracts';
+import {
+  PayRequestSchema,
+  type PayRequest,
+  type PayResponse,
+  type PaymentState,
+} from '@apf/contracts';
 import { createTokenClient } from './gateway.js';
+
+export const OUTPUT_BYTES = 16000;
+export function boundedText(value: string, secrets: string[] = [], limit = OUTPUT_BYTES) {
+  for (const secret of secrets) if (secret) value = value.split(secret).join('[REDACTED]');
+  let output = new TextDecoder().decode(Buffer.from(value).subarray(0, limit));
+  while (Buffer.byteLength(output) > limit) output = output.slice(0, -1);
+  return output;
+}
+
+// Deliberate allowlist: no headers, authorizations, raw gateway payload or merchant explanation.
+export function workerOutput(
+  result: PayResponse,
+  url: string,
+  state: PaymentState | null,
+  token: string,
+) {
+  const body = result.status === 'approved' ? result.response : null;
+  return {
+    trust: 'untrusted_tool_output',
+    status: result.status,
+    receipt: {
+      decision_id: boundedText(result.decision_id, [token], 128),
+      payment_id: 'payment_id' in result ? boundedText(result.payment_id, [token], 128) : null,
+      payment_state: state,
+      merchant: boundedText(new URL(url).origin, [token], 256),
+      amount: result.status === 'approved' ? result.amount : null,
+      payee: result.status === 'approved' ? result.payee : null,
+    },
+    data: body
+      ? {
+          status_code: body.status_code,
+          content_type: boundedText(body.content_type, [token], 128),
+          body: boundedText(body.body, [token]),
+          truncated: Buffer.byteLength(body.body) > OUTPUT_BYTES,
+        }
+      : null,
+  };
+}
 
 export type Purchase = Omit<PayRequest, 'idempotency_key'>;
 export type Trace = (line: string) => void;
@@ -120,7 +163,16 @@ export function createTools(options: {
             response = await bounded(client.decision(response.decision_id));
           }
           trace(`payment: ${response.status}`);
-          return response;
+          let state: PaymentState | null = null;
+          if ('payment_id' in response) {
+            try {
+              state = (await bounded(client.payment(response.payment_id))).state;
+            } catch {
+              // Receipt lookup failure does not imply settlement or invalidate returned data.
+              state = null;
+            }
+          }
+          return workerOutput(response, request.url, state, options.token);
         } catch {
           trace('payment: retrying same purchase');
         }
