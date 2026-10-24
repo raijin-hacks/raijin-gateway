@@ -1,6 +1,6 @@
 // P4/P5 · pay(paymentId, quote) and reconcile(paymentId), written before the implementation.
 // Each test runs a throwaway local merchant; signing uses a random key, so nothing touches the chain.
-import { afterAll as after, test } from 'vitest';
+import { afterAll as after, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -9,6 +9,27 @@ import { createPayments } from './index.js';
 import { getQuote } from './quote.js';
 import { systemClock } from '../clock.js';
 import { MemoryPaymentStore } from './testing/memory-store.js';
+
+// Unpinned on purpose: these tests talk to local fake merchants. The gateway uses transport.ts.
+const plainFetch = (url: string, init: RequestInit) => fetch(url, init);
+
+// Controlled chain evidence for paid-request tests. The dedicated reconciler suite exercises
+// JSON-RPC; a merchant header alone never changes this fixture's nonce state.
+const chainUsed = vi.hoisted(() => new Set<string>());
+vi.mock('viem', async (original) => ({
+  ...(await original<typeof import('viem')>()),
+  createPublicClient: () => ({
+    getChainId: async () => 84532,
+    getBlock: async ({ blockNumber }: { blockNumber?: bigint }) => ({
+      number: blockNumber ?? 50000n,
+      timestamp:
+        BigInt(Math.floor(systemClock.now() / 1000)) -
+        (blockNumber === undefined ? 0n : 50000n - blockNumber),
+    }),
+    readContract: async ({ args }: { args: [string, string] }) => chainUsed.has(args[1]),
+    getLogs: async () => [{ transactionHash: TX }],
+  }),
+}));
 
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYEE = '0x0d972d44bda2bc27420debd711395729480186ae';
@@ -31,7 +52,10 @@ async function listen(
 ): Promise<string> {
   const server = createServer(handler);
   servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
@@ -93,6 +117,8 @@ async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: 
     });
 
     const outcome = outcomes[paid.length - 1] ?? 'settle';
+    if (['settle', 'settle_slowly', 'drop_after_settle'].includes(outcome))
+      chainUsed.add(authorization.nonce);
     if (outcome === 'settle_slowly') await new Promise((r) => setTimeout(r, 100)); // keeps the request in flight
     switch (outcome === 'settle_slowly' ? 'settle' : outcome) {
       case 'drop_after_settle':
@@ -166,10 +192,11 @@ async function setup(outcomes: Outcome[]) {
   const m = await merchant(store, paymentId, outcomes);
   const rpc = await countingRpc();
   const payments = createPayments({
+    transport: plainFetch,
     store,
     config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url },
   });
-  const quote = await getQuote(m.url, 'GET');
+  const quote = await getQuote(m.url, 'GET', plainFetch);
   return { store, paymentId, merchant: m, rpc, payments, quote };
 }
 
@@ -338,11 +365,7 @@ test('(e) store refuses settlement (row already FAILED): pay must not report SET
   await assert.rejects(payments.pay(paymentId, quote), (err: unknown) => {
     assert.ok(err instanceof Error);
     assert.match(err.message, /FAILED/);
-    assert.equal(
-      (err as { txHash?: string }).txHash,
-      TX,
-      'the error carries the tx hash so it can be reconciled by hand',
-    );
+    assert.equal((err as { txHash?: string }).txHash, TX);
     return true;
   });
   assert.equal(
@@ -412,8 +435,16 @@ test('(f) two gateway processes retrying one payment at once: the ledger still e
   } = await setup(['drop_after_settle', 'settle_slowly', '402']);
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
 
-  const processA = createPayments({ store, config: { walletPrivateKey: generatePrivateKey() } });
-  const processB = createPayments({ store, config: { walletPrivateKey: generatePrivateKey() } });
+  const processA = createPayments({
+    transport: plainFetch,
+    store,
+    config: { walletPrivateKey: generatePrivateKey() },
+  });
+  const processB = createPayments({
+    transport: plainFetch,
+    store,
+    config: { walletPrivateKey: generatePrivateKey() },
+  });
   const results = await Promise.all([
     processA.pay(paymentId, quote),
     processB.pay(paymentId, quote),
@@ -502,7 +533,7 @@ test('(g) reconciler failed the payment while the request was in flight: ambiguo
 
 // ---------- (h) a merchant can't make the gateway buffer an unbounded response ----------
 
-test('(h) endless response with settlement proof: cut off at the size limit, the payment still settles', async () => {
+test('(h) endless response, even with a settlement header: cut off at the size limit, UNKNOWN for the reconciler', async () => {
   const {
     store,
     paymentId,
@@ -514,13 +545,11 @@ test('(h) endless response with settlement proof: cut off at the size limit, the
   const started = performance.now();
   const result = await payments.pay(paymentId, quote);
 
-  assert.equal(result.state, 'SETTLED', 'the settlement proof in the headers is still honoured');
-  assert.equal(
-    result.state === 'SETTLED' && result.response.body,
-    '',
-    'the oversized body is not delivered',
-  );
-  assert.equal((await store.get(paymentId))?.state, 'SETTLED');
+  // A merchant header is never settlement evidence, and there is no deliverable to keep.
+  assert.deepEqual(result, { state: 'UNKNOWN' });
+  assert.equal((await store.get(paymentId))?.state, 'UNKNOWN');
+  assert.equal(store.called('fail'), 0);
+  assert.equal(store.rows.get(paymentId)?.response_json, null, 'nothing over the cap is saved');
   assert.ok(performance.now() - started < 5_000, 'stopped on size, not on the 15 s timeout');
   assert.ok(
     m.bytesSent() < 32 * 1024 * 1024,
@@ -629,6 +658,7 @@ test('(c) reconciler fails a payment stuck in SIGNED without asking the chain or
     }),
   });
   const payments = createPayments({
+    transport: plainFetch,
     store,
     config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url },
   });

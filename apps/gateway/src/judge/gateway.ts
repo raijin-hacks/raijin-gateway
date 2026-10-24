@@ -9,8 +9,7 @@ export type AdmittedRoute = {
   match: Extract<JudgeContext['match'], { kind: 'known' }>;
 };
 export type AdmissionHold =
-  | { kind: 'deny'; reason: 'BAD_URL' | 'DUPLICATE_PARAM' }
-  | { kind: 'escalate'; reason: 'UNCATALOGED_ENDPOINT' };
+  | { kind: 'deny'; reason: 'BAD_URL' | 'DUPLICATE_PARAM' | 'UNCATALOGED_ENDPOINT' };
 
 /** Startup composition only. No quote/grant/judge callback can run for an unknown route.
  * Admission is not SSRF verification or payment authorization. Callers still own every
@@ -28,7 +27,7 @@ export function createGatewayAdmission(catalog: Catalog) {
       const canonical = canonicalize(rawUrl);
       if (!canonical.ok) return { kind: 'deny', reason: canonical.code };
       const route = routeMatch(matchEndpoint(canonical, method, catalog));
-      if (route.kind === 'escalate') return route;
+      if (route.kind === 'deny') return route;
       return next({ canonical, method, match: route.match });
     },
   });

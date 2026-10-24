@@ -13,6 +13,7 @@ export interface Config {
   port: number;
   paymentsMode: 'real' | 'mock';
   judgeMode: 'real' | 'stub-escalate' | 'stub-approve';
+  standingGrants: boolean;
   /** Not an environment setting; tests shorten it. */
   streamHeartbeatMs: number;
   denylistHosts?: string[];
@@ -25,6 +26,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().min(0).max(65_535).default(4000),
   PAYMENTS_MODE: z.enum(['real', 'mock']).default('mock'),
   JUDGE_MODE: z.enum(['real', 'stub-escalate', 'stub-approve']).default('stub-escalate'),
+  STANDING_GRANTS: z.enum(['on', 'off']).default('off'),
 });
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -48,6 +50,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port: e.PORT,
     paymentsMode: e.PAYMENTS_MODE,
     judgeMode: e.JUDGE_MODE,
+    standingGrants: e.STANDING_GRANTS === 'on',
     streamHeartbeatMs: TIMING.streamHeartbeatMs,
   };
 }

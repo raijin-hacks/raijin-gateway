@@ -7,7 +7,7 @@ import {
 import type { JudgeInput, JudgeOutput } from './index';
 
 it('uses Chunk 2 schema and reason exports as the single output authority', () => {
-  expect(CONTRACTS_VERSION).toBe('1.2');
+  expect(CONTRACTS_VERSION).toBe('1.3');
   expect(judgeOutputSchema).toBe(JudgeOutputSchema);
   expect(judgeInputSchema).toBe(JudgeInputSchema);
   expectTypeOf<z.infer<typeof JudgeOutputSchema>>().toEqualTypeOf<JudgeOutput>();

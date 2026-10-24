@@ -22,6 +22,7 @@ export const PRECONTACT_CODES = [
   'DUPLICATE_PARAM',
   'BAD_URL',
   'UNCATALOGED_ENDPOINT',
+  'MERCHANT_NOT_SELECTED',
 ] as const satisfies readonly PrecontactCode[];
 
 export const QUOTE_CODES = [
@@ -53,7 +54,6 @@ export const TIER1_CODES = [
   'GRANT_PARAMS',
   'GRANT_TRUST',
   'GRANT_EXHAUSTED',
-  'MERCHANT_NOT_SELECTED',
 ] as const satisfies readonly Tier1Code[];
 
 export const JUDGE_CODES = [
@@ -125,7 +125,8 @@ export const REASON_ACTION: Readonly<Record<ReasonCode, ReasonAction>> = {
   UNKNOWN_WITH_PARAMS: 'escalate',
   DUPLICATE_PARAM: 'deny',
   BAD_URL: 'deny',
-  UNCATALOGED_ENDPOINT: 'escalate',
+  UNCATALOGED_ENDPOINT: 'deny',
+  MERCHANT_NOT_SELECTED: 'deny',
 
   QUOTE_FAILED: 'deny',
   NOT_402: 'deny',
@@ -151,7 +152,6 @@ export const REASON_ACTION: Readonly<Record<ReasonCode, ReasonAction>> = {
   GRANT_PARAMS: 'log',
   GRANT_TRUST: 'log',
   GRANT_EXHAUSTED: 'log',
-  MERCHANT_NOT_SELECTED: 'log',
 
   JUDGE_APPROVED: 'approve',
   JUDGE_OFF_TASK: 'judge_decides',

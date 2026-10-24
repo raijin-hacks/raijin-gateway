@@ -3,6 +3,9 @@ import type { z } from 'zod';
 import {
   AddressSchema,
   ApprovalRequestSchema,
+  AgentSummarySchema,
+  AgentsResponseSchema,
+  ApprovalsQuerySchema,
   CatalogSchema,
   CreateMandateRequestSchema,
   INPUT_LIMITS,
@@ -10,6 +13,8 @@ import {
   PURPOSE_CODES,
   PayRequestSchema,
   PayResponseSchema,
+  PendingApprovalSchema,
+  PendingApprovalsResponseSchema,
   REASON_CODES,
   ReasonCodeSchema,
   StreamEventSchema,
@@ -105,6 +110,37 @@ describe('PayRequestSchema', () => {
         ['a missing url', { url: undefined }],
       ]),
     ],
+  });
+});
+
+describe('operator dashboard response schemas', () => {
+  const agents = jsonExampleAfter('#### `GET /agents` response');
+  const approvals = jsonExampleAfter('#### `GET /approvals?status=pending` response');
+
+  it('accepts the documented agents and pending approval examples unchanged', () => {
+    expect(AgentsResponseSchema.parse(agents)).toEqual(agents);
+    expect(PendingApprovalsResponseSchema.parse(approvals)).toEqual(approvals);
+  });
+
+  it('validates an agent and the required pending status query', () => {
+    expect(
+      AgentSummarySchema.parse({ id: 'agt_demo', name: 'Demo', role: 'research', trust: 70 }),
+    ).toEqual({
+      id: 'agt_demo',
+      name: 'Demo',
+      role: 'research',
+      trust: 70,
+    });
+    expect(ApprovalsQuerySchema.safeParse({ status: 'pending' }).success).toBe(true);
+    expect(ApprovalsQuerySchema.safeParse({ status: 'approved' }).success).toBe(false);
+    expect(ApprovalsQuerySchema.safeParse({}).success).toBe(false);
+  });
+
+  it('allows null catalog and quote details for an unadmitted review', () => {
+    const example = (approvals as Record<string, unknown>[])[0]!;
+    expect(
+      PendingApprovalSchema.parse({ ...example, merchant: null, endpoint: null, price: null }),
+    ).toMatchObject({ merchant: null, endpoint: null, price: null });
   });
 });
 

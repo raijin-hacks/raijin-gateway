@@ -11,7 +11,8 @@ export async function readCapped(res: Response, maxBytes: number): Promise<strin
     if (done) break;
     size += value.byteLength;
     if (size > maxBytes) {
-      await reader.cancel().catch(() => undefined);
+      // Don't wait on a hostile source to acknowledge the cancel before answering.
+      void reader.cancel().catch(() => undefined);
       return null;
     }
     chunks.push(value);

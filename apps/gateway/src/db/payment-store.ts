@@ -47,7 +47,8 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
     WHERE id = :payment_id AND state = 'RESERVED'
       AND EXISTS (SELECT 1 FROM mandates m JOIN decisions d ON d.mandate_id = m.id
         JOIN sessions s ON s.id = d.session_id WHERE d.id = payments.decision_id
-        AND m.status = 'active' AND m.expires_at > :now AND s.status = 'active' AND s.trust >= 20)`);
+        AND m.status = 'active' AND m.expires_at > :now AND s.status = 'active'
+        AND (s.trust >= 40 OR (s.trust >= 20 AND d.stage = 'human' AND d.outcome = 'approved')))`);
   const markSubmitted = transition('SIGNED', 'SUBMITTED');
   const markUnknown = transition('SUBMITTED', 'UNKNOWN');
   // Not a state change: only the first reply is kept, and only once a paid request may have gone out.

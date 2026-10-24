@@ -5,6 +5,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { getQuote, QuoteError } from './quote.js';
 
+// Unpinned on purpose: these tests talk to local fake merchants. The gateway uses transport.ts.
+const plainFetch = (url: string, init: RequestInit) => fetch(url, init);
+
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYEE = '0x0D972D44bda2Bc27420Debd711395729480186aE'; // mixed case on purpose; Quote.payee must be lowercase
 
@@ -32,7 +35,10 @@ const servers: ReturnType<typeof createServer>[] = [];
 async function merchant(handler: Handler): Promise<string> {
   const server = createServer(handler);
   servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
@@ -64,7 +70,7 @@ test('402 with a Base Sepolia USDC option returns the Quote', async () => {
   const origin = await merchant((_req, res) => send402(res));
   const url = `${origin}/v1/pricing/acme?period=30d`;
 
-  const quote = await getQuote(url, 'GET');
+  const quote = await getQuote(url, 'GET', plainFetch);
 
   assert.deepEqual(
     {
@@ -92,7 +98,7 @@ test('sends the request without any payment header, using the given method', asy
     send402(res);
   });
 
-  await getQuote(`${origin}/v1/pricing/export`, 'POST');
+  await getQuote(`${origin}/v1/pricing/export`, 'POST', plainFetch);
 
   assert.ok(seen);
   assert.equal(seen.method, 'POST');
@@ -115,7 +121,7 @@ for (const status of [301, 302, 303, 307, 308]) {
       res.end();
     });
 
-    await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_INVALID');
+    await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_INVALID');
     assert.equal(targetHits, 0, 'redirect must not be followed');
   });
 }
@@ -129,7 +135,7 @@ for (const status of [200, 401, 404, 500]) {
       res.end('{"ok":true}');
     });
 
-    await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'NOT_402');
+    await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'NOT_402');
   });
 }
 
@@ -141,7 +147,7 @@ test('merchant that never responds times out after ~3 s as QUOTE_FAILED', async 
   });
 
   const started = performance.now();
-  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_FAILED');
+  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_FAILED');
   const elapsed = performance.now() - started;
   assert.ok(elapsed >= 2_800 && elapsed < 4_500, `timed out after ${elapsed} ms, expected ~3000`);
 });
@@ -153,7 +159,7 @@ test('the 3 s timeout also covers a body that stalls after the 402 headers', asy
   });
 
   const started = performance.now();
-  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_FAILED');
+  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_FAILED');
   assert.ok(performance.now() - started < 4_500);
 });
 
@@ -162,11 +168,14 @@ test('connection refused is QUOTE_FAILED', async () => {
   const closed = servers.pop()!;
   await new Promise<void>((resolve) => closed.close(() => resolve()));
 
-  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_FAILED');
+  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_FAILED');
 });
 
 test('unresolvable host is QUOTE_FAILED', async () => {
-  await rejectsWith(getQuote('http://quote-test.invalid/v1/pricing/acme', 'GET'), 'QUOTE_FAILED');
+  await rejectsWith(
+    getQuote('http://quote-test.invalid/v1/pricing/acme', 'GET', plainFetch),
+    'QUOTE_FAILED',
+  );
 });
 
 // ---------- 5. read at most 64 KB ----------
@@ -184,7 +193,7 @@ test('an endless 402 body is cut off at 64 KB instead of read to the end', async
   });
 
   const started = performance.now();
-  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_INVALID');
+  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_INVALID');
   assert.ok(performance.now() - started < 2_800, 'gave up on size, not on the timeout');
   assert.ok(bytesSent < 8 * 1024 * 1024, `kept reading: server pushed ${bytesSent} bytes`);
 });
@@ -199,7 +208,7 @@ test('a 402 body just over 64 KB is QUOTE_INVALID even if it is valid JSON', asy
     res.end(body);
   });
 
-  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_INVALID');
+  await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_INVALID');
 });
 
 // ---------- requirements parsing (spec: none or malformed is QUOTE_INVALID) ----------
@@ -219,7 +228,7 @@ test('picks the Base Sepolia USDC option when several are offered', async () => 
     send402(res, [mainnet, otherToken, baseSepoliaUsdc]),
   );
 
-  const quote = await getQuote(`${origin}/v1/pricing/acme`, 'GET');
+  const quote = await getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch);
   assert.deepEqual(quote.raw, baseSepoliaUsdc);
   assert.equal(quote.amount, 10000);
 });
@@ -251,6 +260,6 @@ const invalid: [string, (res: ServerResponse) => void][] = [
 for (const [name, respond] of invalid) {
   test(`QUOTE_INVALID: ${name}`, async () => {
     const origin = await merchant((_req, res) => respond(res));
-    await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET'), 'QUOTE_INVALID');
+    await rejectsWith(getQuote(`${origin}/v1/pricing/acme`, 'GET', plainFetch), 'QUOTE_INVALID');
   });
 }

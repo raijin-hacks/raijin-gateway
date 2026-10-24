@@ -177,7 +177,7 @@ describe('operator catalog HTTP exception', () => {
       expect(result.ok).toBe(true);
       if (result.ok)
         expect(routeMatch(matchEndpoint(result, 'POST', catalog))).toEqual({
-          kind: 'escalate',
+          kind: 'deny',
           reason: 'UNCATALOGED_ENDPOINT',
         });
     }

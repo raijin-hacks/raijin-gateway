@@ -56,6 +56,7 @@ export function createHarness(
     port: 0,
     paymentsMode: 'mock',
     judgeMode: 'stub-escalate',
+    standingGrants: false,
     streamHeartbeatMs: 15_000,
     ...overrides,
   };

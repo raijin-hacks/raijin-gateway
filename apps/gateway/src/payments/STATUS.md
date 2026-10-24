@@ -3,6 +3,7 @@
 ## 2026-10-23 · P1 Setup (branch `chunk1/p1-setup`)
 
 **Done**
+
 - pnpm workspace at the root (`package.json`, `pnpm-workspace.yaml`, `.npmrc` with `save-exact`), pnpm 10.34.7, Node >= 22.18 (runs `.ts` natively, no tsx).
 - Pinned exact versions, following the official x402 TypeScript examples (`coinbase/x402` main: `examples/typescript/clients/fetch/index.ts` and `servers/express/index.ts`):
   - `apps/gateway`: `@x402/core` 2.28.0, `@x402/fetch` 2.28.0, `@x402/evm` 2.28.0, `viem` 2.57.7
@@ -14,39 +15,45 @@
 
 **Wallets (Base Sepolia, testnet only)**
 
-| Role | Address |
-|---|---|
-| payer (gateway) | `0x34bed74915ca69fdd99b23e28b949d4afc89a582` |
+| Role             | Address                                      |
+| ---------------- | -------------------------------------------- |
+| payer (gateway)  | `0x34bed74915ca69fdd99b23e28b949d4afc89a582` |
 | PriceScope payee | `0x0d972d44bda2bc27420debd711395729480186ae` |
-| SkyData payee | `0xd78e8d21837b7957b53251fae747e58c6e71df3c` |
-| NewsWire payee | `0x9b9454a6605a8cb0a552c4fbc7db76b6a55aa614` |
-| Attacker payee | `0xca7c3c3ac945e0febcebae02de1fbe847bcd4d19` |
+| SkyData payee    | `0xd78e8d21837b7957b53251fae747e58c6e71df3c` |
+| NewsWire payee   | `0x9b9454a6605a8cb0a552c4fbc7db76b6a55aa614` |
+| Attacker payee   | `0xca7c3c3ac945e0febcebae02de1fbe847bcd4d19` |
 
 Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 
 **Open**
+
 - Fund the payer from the CDP faucet (Base Sepolia USDC; ETH optional, since x402 exact/EIP-3009 settlement is paid by the facilitator). Not done by the agent, on purpose.
 - `.env` was already tracked by git. It must be untracked (`git rm --cached .env`) before any commit, or the new keys get committed.
 - CI conflict: `.github/workflows/ci.yml` requires npm (`package-lock.json` plus `lint`, `format:check`, `typecheck`, `test`, `build` scripts) once a root `package.json` exists, but contracts §0 says pnpm. CI fails on this branch until the workflow (or the decision) changes. Needs the team.
 - Contracts §0 lists env vars without per-payee keys. The `PAYEE_*_PRIVATE_KEY` vars are new and only needed to sweep funds; propose adding them per §6.
 - `apps/gateway/package.json` and the root workspace files sit in B's area. Created minimally so the payments scripts can run; B should review.
+
 ## 2026-10-23 · P2 First real payment (branch `chunk1/p1-setup`)
 
 **Done**
+
 - `apps/merchants/src/pricescope.ts`: PriceScope on :4101 (`PRICESCOPE_PORT`), `GET /v1/pricing/:company?period=` behind `@x402/express` `paymentMiddleware`. Price is an explicit `AssetAmount`: `10000` atomic of USDC `0x036C…dCF7e` with EIP-712 domain `{ name: 'USDC', version: '2' }`, `payTo` from `payees.json` (`pricescope`). Facilitator from `FACILITATOR_URL`, default `https://x402.org/facilitator`. Run: `pnpm merchants:pricescope`.
 - `apps/gateway/src/payments/scripts/pay-once.ts` (throwaway): `wrapFetchWithPayment` pays the URL (default `http://localhost:4101/v1/pricing/acme?period=30d`, or pass one as the first arg), then prints the body, the decoded `PAYMENT-RESPONSE` settlement, the tx hash and a basescan link. On a failed payment it prints the facilitator's reason. Run: `pnpm payments:pay-once`.
 - Checked: an unpaid request returns 402 with `accepts[0] = { scheme: exact, network: eip155:84532, amount: "10000", payTo: 0x0d97…86ae, maxTimeoutSeconds: 300 }`. Dry run with a random unfunded key: the client signs, the facilitator verifies, and the payment is rejected with `invalid_exact_evm_insufficient_balance`. The whole path works up to the balance check.
 
 **Milestone met:** first real payment settled on Base Sepolia: `0xbcf31d3f420dfd6006701912e015e935078a899bbd0f5bc0aeabedc0a41abb15` (block 49499677, 10000 atomic USDC, payer to PriceScope). https://sepolia.basescan.org/tx/0xbcf31d3f420dfd6006701912e015e935078a899bbd0f5bc0aeabedc0a41abb15
+
 - Payer funded with 20 USDC from faucet.circle.com (Base Sepolia).
 - The first attempts failed at settlement with `invalid_exact_evm_transaction_failed` / "replacement transaction underpriced". That was a nonce collision on the shared x402.org facilitator's gas wallet, not our code; a retry settled. `pay-once` now prints the `PAYMENT-RESPONSE` failure reason. P4's "anything else is UNKNOWN, never FAILED" rule covers exactly this case.
 
 **Open**
+
 - The x402 route pattern `GET /v1/pricing/:company` also matches `/v1/pricing/export`, but only for GET. When P6 adds `POST /v1/pricing/export`, give it its own route entry.
 
 ## 2026-10-24 · P3 `getQuote(canonicalUrl, method)`
 
 **Done**
+
 - `quote.ts`: `getQuote` and `QuoteError` (`code: QuoteCode`). It sends no payment header, uses `redirect: 'manual'`, and has one 3 s `AbortSignal` that covers both the headers and the body.
   - A 3xx is `QUOTE_INVALID` and is never followed. A non-402 is `NOT_402`. A network error, a timeout, or a body that stalls is `QUOTE_FAILED`.
   - Requirements come from the base64 `PAYMENT-REQUIRED` header (x402 v2), falling back to a JSON body read with a 64 KB cap; over the cap is `QUOTE_INVALID`.
@@ -58,6 +65,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - Checked against the live PriceScope: it returns `{ amount: 10000, payee: 0x0d97…86ae, network: eip155:84532 }`.
 
 **Open**
+
 - P4: the x402 client builds a payment from the whole 402 response (`x402Version`, `resource`, `accepts`), so `pay` has to wrap `quote.raw` back into that shape (`x402Version: 2`, `accepts: [raw]`). If that proves awkward, propose a §6 change so `raw` holds the whole 402 response.
 - The JSON-body fallback expects the v2 shape (`network: eip155:84532`, `amount`). v1 bodies (`base-sepolia`, `maxAmountRequired`) come back as `QUOTE_INVALID`. None of our merchants send v1.
 - B: once `packages/contracts` lands, swap `types.ts` for the import.
@@ -65,6 +73,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 ## 2026-10-24 · P4 `pay(paymentId, quote)` (branch `chunk1/p4-pay`)
 
 **Done**
+
 - `pay.ts`, wired into `createPayments({ store, config: { walletPrivateKey, rpcUrl } })` in `index.ts`. The order of writes:
   1. From `RESERVED`, sign once with x402 `ExactEvmScheme`. Before signing, check that `quote.raw` matches `quote.amount`, `quote.payee` and `eip155:84532`; after signing, check that the authorization's `value` and `to` match the quote. Either mismatch throws, and nothing is stored or sent.
   2. `markSigned(nonce, validBefore in ms, authorizationJson)` before anything is sent.
@@ -95,6 +104,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
   - Mutation-checked: moving `markSubmitted` after the send fails (a); calling `fail` on a bad merchant response fails the 3 variants; re-signing on retry fails (b).
 
 **Open**
+
 - Not run against the live merchant with the real wallet yet: that spends 0.01 test USDC and needs the `.env` key.
 - The validity window is `maxTimeoutSeconds` from the merchant's requirements (300 s = 5 min for PriceScope). We can't shorten it without the merchant rejecting the payment, so a merchant asking for a long window gets one. Tier 0 could cap `maxTimeoutSeconds`.
 - `MERCHANT_KEYS_JSON` is not attached yet: the spec doesn't name the header, so this needs a decision.
@@ -104,6 +114,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 ## 2026-10-24 · P5 `reconcile(paymentId)` and `startReconciler` (branch `chunk1/p4-pay`)
 
 **Done**
+
 - `reconcile.ts`, wired into `createPayments` (`rpcUrl` comes from `BASE_SEPOLIA_RPC_URL`); `startReconciler` is exported from `index.ts`.
   - `SIGNED` -> `fail`, with no chain or merchant contact. If `pay` is mid-flight, its `markSubmitted` then fails and it sends nothing.
   - `SUBMITTED` / `UNKNOWN`: read `USDC.authorizationState(authorizer, nonce)` at the latest block (the authorizer comes from the stored authorization).
@@ -135,6 +146,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
   - `SIGNED` failed without a chain check: as specified, and test `(c)` asserts no chain calls. The invariant (never send before `markSubmitted`) is enforced by the order of writes plus the pre-send re-read, and tested by `(a)`. A comment at `markSubmitted` in `pay.ts` now states the dependency.
 
 **Open**
+
 - A late settlement after `FAILED` still can't be recorded (no `FAILED -> SETTLED` transition); see the P4 note. The reconciler only fails at or after `validBefore` on chain time, which makes this rare. `pay`'s `SettlementNotRecordedError` still covers it.
 - Chunk 2 must call `startReconciler` at gateway startup and `stop()` it on shutdown.
 - Not yet covered: A19 (kill the gateway between `markSubmitted` and the response, restart, reconciler resolves it) needs B's real store.
@@ -142,6 +154,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 ## 2026-10-24 · Merged `main` (B's gateway foundation) into the chunk-1 branch
 
 **Done**
+
 - Resolved the 6 add/add and content conflicts (root `package.json`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example`, `apps/gateway/package.json`, `pnpm-lock.yaml`). Kept `main`'s workspace, tooling and gateway config, and added our scripts, our x402/viem dependencies and the `PAYEE_*` keys in `.env.example`. The lockfile was regenerated, passes `--frozen-lockfile`, and our pinned versions pass `minimumReleaseAge`.
 - Adopted B's conventions:
   - Types now come from `@apf/contracts` (identical to §5); `types.ts` is deleted.
@@ -152,11 +165,13 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - Full CI set on the merged tree: `lint`, `format:check`, `typecheck` and `build` all pass, and `test` gives 918 passed / 11 todo (all packages, including our 66 payments tests, now `pnpm payments:test`). Smoke-checked: PriceScope answers 402 via `tsx`, and `payments:balance` runs.
 
 **Open**
+
 - B's real `PaymentStore` is now on `main`. Run the payments tests against it (and A19) in addition to `MemoryPaymentStore`.
 
 ## 2026-10-24 · critic.md item: keep purchased results (branch `chunk1/codex-fixes`)
 
 **Done**
+
 - Contract: new `PaymentStore.saveResponse(paymentId, { status_code, content_type, body })`, in `packages/contracts/src/types.ts` and `final_contracts.md` §5, marked there as a proposed amendment pending team sign-off. It saves only in `SUBMITTED`/`UNKNOWN`/`SETTLED`, and only the first reply is kept.
 - B's SQLite store (`db/payment-store.ts`): one conditional `UPDATE` into the existing `payments.response_json` column. It doesn't touch state, money or `updated_at`. B's tests cover each of the six states, first save wins, survival across a database close/reopen plus a later settle, and an unknown id.
 - `pay()`: saves any 2xx body (within the 1 MB cap) **before** deciding settled or unknown. A failed save is logged and never blocks settling. PR #17's `replay()` already returns `payments.response_json` once a payment is `SETTLED`, so a settlement the reconciler finds later now delivers the data instead of `response: null`.
@@ -165,5 +180,21 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - Full CI set passes: lint, format, typecheck, build; tests 1256 passed / 6 todo.
 
 **Open**
+
 - PR #17 must add one pass-through line, `saveResponse: (id, r) => store.saveResponse(id, r)`, to `withPaymentEvents` (and its mock store if typed as `PaymentStore`), or its typecheck fails after rebasing on this. Its own write of `response_json` after a synchronous settle becomes redundant but harmless.
 - The end-to-end pipeline test (delayed settlement, then poll and same-key retry return the data) needs PR #17 merged.
+
+## 2026-10-24 · J2b pinned transport (branch `chunk1/j2b`, stacked on `chunk2/land-stack`)
+
+**Done**
+- `transport.ts`: the only way payments reaches a merchant. Per request: classify and pin the destination once (brians242's `destination.ts`), connect to exactly that address with no second lookup, keep TLS verifying the real hostname (SNI and identity check), confirm the connected peer, never follow redirects, never use a proxy (fresh unpooled socket).
+- `destination.ts` now also requires the origin to be a cataloged merchant. Before this, any public HTTPS host passed (found by the live check).
+- `getQuote` and `pay()` take the transport explicitly. `createPayments({ transport })` has no default; tests pass plain `fetch` on purpose.
+- `main.ts`: real mode passes `createPinnedTransport(createDestinationVerifier(catalog))`, and the startup block that refused real quotes and payments is removed.
+- Tests: 8 transport tests against a real local merchant and a loader-admitted catalog (pinned quote, one lookup per request, rebinding refused, mixed answers refused, uncataloged HTTP/HTTPS refused, redirect not followed, proxy env ignored, `.invalid` hostname proves the pin). Mutation-checked: removing the pin or the catalog check fails its test.
+- Live, read-only: `example.com` pinned to a public address and fetched over verified TLS; a wrong hostname on that address refused at TLS; `example.org` (uncataloged) and plain-HTTP public hosts refused.
+
+**Open**
+- Not yet done: one real Base Sepolia payment through the gateway in `PAYMENTS_MODE=real` (needs the wallet key in `.env`). This is the 6 PM checkpoint.
+- Peer verification is defensive; no test forces a mismatched peer.
+- A destination refused inside `pay()` happens after `markSubmitted`, so the payment goes `UNKNOWN` and the reconciler fails it after expiry (nothing was sent).

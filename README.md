@@ -4,6 +4,8 @@ guys please make sure to squash and merge
 
 Agent Payment Firewall: a payment gateway that checks _why_ an AI agent is paying, against the task a human gave it, before anything is signed.
 
+**Team docs: [`docs/`](docs/README.md)** covers how the parts fit together, who owns what, how to run everything, and open issues. Start with [architecture](docs/architecture.md).
+
 Design and tasks:
 
 - [Design](design-docs/Design.md)
