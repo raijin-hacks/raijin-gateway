@@ -13,17 +13,20 @@ the Actions summary; Node application checks are explicitly skipped until a root
 
 ## Activating application checks
 
-The design proposes TypeScript/Node and Next.js. This scaffold assumes Node 22
-and npm; these are CI defaults, not existing repository requirements. When adding
+The design proposes TypeScript/Node and Next.js. This scaffold uses Node 22
+and supports npm and pnpm; these are CI defaults, not existing repository requirements. When adding
 the application:
 
-1. Commit a root `package.json` and `package-lock.json`. If using another package
-   manager or a different runtime version, update the workflow accordingly.
+1. Commit a root `package.json` and the matching lockfile: `package-lock.json`
+   for npm or `pnpm-lock.yaml` for pnpm. For pnpm, pin an exact version in
+   `packageManager` (such as `pnpm@10.0.0`); CI enables it through Corepack.
+   Other package managers require workflow changes.
 2. Define real, non-interactive scripts: `lint`, `format:check`, `typecheck`,
    `test`, and `build`. Formatting must check without writing; tests must run once
    without watch mode. For a workspace, root scripts must cover all packages.
 3. The workflow validates these prerequisites, sets up Node with the npm download
-   cache keyed by the lockfile, installs with `npm ci`, and runs each check in order.
+   cache keyed by the matching lockfile, installs with `npm ci` or
+   `pnpm install --frozen-lockfile`, and runs each check using that manager.
    Missing scripts fail CI rather than silently skipping checks.
 
 No application scripts or dependencies have been invented for this docs-only

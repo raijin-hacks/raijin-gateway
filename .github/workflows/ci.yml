@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_app: ${{ steps.tooling.outputs.has_app }}
+      package_manager: ${{ steps.tooling.outputs.package_manager }}
+      lockfile: ${{ steps.tooling.outputs.lockfile }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect application and validate check scripts
@@ -50,12 +52,19 @@ jobs:
             process.exit(0);
           }
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          if (pkg.packageManager && !pkg.packageManager.startsWith('npm@')) {
-            throw new Error('CI currently assumes npm. Update the install/cache/run steps for the selected package manager.');
+          const manager = pkg.packageManager?.split('@')[0] ||
+            (fs.existsSync('pnpm-lock.yaml') ? 'pnpm' : 'npm');
+          if (!['npm', 'pnpm'].includes(manager)) {
+            throw new Error(`Unsupported package manager: ${manager}. CI supports npm and pnpm.`);
           }
-          if (!fs.existsSync('package-lock.json')) {
-            throw new Error('Commit a root package-lock.json for reproducible npm ci installs.');
+          if (manager === 'pnpm' && !/^pnpm@\d+\.\d+\.\d+/.test(pkg.packageManager || '')) {
+            throw new Error('Pin pnpm in package.json packageManager (for example, pnpm@10.0.0).');
           }
+          const lockfile = manager === 'pnpm' ? 'pnpm-lock.yaml' : 'package-lock.json';
+          if (!fs.existsSync(lockfile)) {
+            throw new Error(`Commit a root ${lockfile} for reproducible ${manager} installs.`);
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `package_manager=${manager}\nlockfile=${lockfile}\n`);
           const required = ['lint', 'format:check', 'typecheck', 'test', 'build'];
           const missing = required.filter(name => typeof pkg.scripts?.[name] !== 'string' || !pkg.scripts[name].trim());
           if (missing.length) throw new Error(`Missing required package.json scripts: ${missing.join(', ')}`);
@@ -72,23 +81,30 @@ jobs:
       CI: true
     steps:
       - uses: actions/checkout@v4
+      - name: Enable pinned pnpm
+        if: needs.inspect.outputs.package_manager == 'pnpm'
+        run: corepack enable
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
+          cache: ${{ needs.inspect.outputs.package_manager }}
+          cache-dependency-path: ${{ needs.inspect.outputs.lockfile }}
+      - name: Install npm dependencies
+        if: needs.inspect.outputs.package_manager == 'npm'
         run: npm ci
+      - name: Install pnpm dependencies
+        if: needs.inspect.outputs.package_manager == 'pnpm'
+        run: pnpm install --frozen-lockfile
       - name: Lint
-        run: npm run lint
+        run: ${{ needs.inspect.outputs.package_manager }} run lint
       - name: Check formatting
-        run: npm run format:check
+        run: ${{ needs.inspect.outputs.package_manager }} run format:check
       - name: Check types
-        run: npm run typecheck
+        run: ${{ needs.inspect.outputs.package_manager }} run typecheck
       - name: Test
-        run: npm test
+        run: ${{ needs.inspect.outputs.package_manager }} run test
       - name: Build
-        run: npm run build
+        run: ${{ needs.inspect.outputs.package_manager }} run build
 
 # CD PLACEHOLDER: docs/Design.md specifies a local demo and only tentative Azure hosting.
 # Add deployment after a host, build artifact, environment, and credentials are defined.
