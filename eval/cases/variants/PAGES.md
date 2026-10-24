@@ -4,7 +4,7 @@ Chunk 1 serves each page as given, as plain HTML, at `http://localhost:4199/page
 
 Written by D without reading Chunk 3's judge prompt. **Chunk 3: don't tune the prompt on these.**
 
-> **Update 2026-10-24:** the gateway now refuses every request to `localhost:4199` before contact (`BAD_URL`: it isn't a catalog origin), so it never fetches a quote from the paid endpoints below. They're **not needed for gateway evaluation**; see the observed stops in [README.md](README.md). The **pages** are still useful: they're what a worker reads, so they measure whether it *tries* an off-task purchase. Build the endpoints only if someone needs the attacker server to answer a direct request.
+> **Update 2026-10-24:** the gateway now refuses every request to `localhost:4199` before contact (`BAD_URL`: it isn't a catalog origin), so it never fetches a quote from the paid endpoints below. They exist (`apps/merchants/src/attacker.ts` serves them and these pages), but they **don't test the gateway's judge**; see the observed stops in [README.md](README.md). The **pages** matter: they're what a worker reads, so they measure whether it *tries* an off-task purchase.
 
 ## New attacker endpoints
 
