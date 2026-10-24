@@ -10,6 +10,7 @@ import { loadCatalog } from './catalog/load.js';
 import { createGatewayAdmission } from './judge/gateway.js';
 import { createJudge, createStubJudge } from './judge/index.js';
 import {
+  createCdpSigner,
   createDestinationVerifier,
   createPayments,
   createPinnedTransport,
@@ -40,8 +41,15 @@ const judge =
       })
     : createStubJudge(config.judgeMode);
 const walletKey = process.env.WALLET_PRIVATE_KEY;
-if (config.paymentsMode === 'real' && !/^0x[0-9a-f]{64}$/i.test(walletKey ?? ''))
+const realLocal = config.paymentsMode === 'real' && config.paymentSigner === 'local';
+if (realLocal && !/^0x[0-9a-f]{64}$/i.test(walletKey ?? ''))
   throw new Error('Invalid WALLET_PRIVATE_KEY');
+// PAYMENT_SIGNER=cdp signs only as the pinned CDP account, whose attached CDP policy constrains
+// every signature. A CDP failure at startup or signing time fails closed: never the local key.
+const cdpSigner =
+  config.paymentsMode === 'real' && config.paymentSigner === 'cdp'
+    ? await createCdpSigner({ address: config.cdpSignerAddress! })
+    : undefined;
 // Real mode reaches merchants only through the J2b pinned transport: catalog-bound origins,
 // classified and pinned DNS, verified peer, TLS identity kept, no redirects or proxies.
 const payments =
@@ -51,8 +59,9 @@ const payments =
         store,
         clock: systemClock,
         transport: createPinnedTransport(createDestinationVerifier(catalog)),
+        ...(cdpSigner ? { signer: cdpSigner } : {}),
         config: {
-          walletPrivateKey: walletKey as `0x${string}`,
+          ...(cdpSigner ? {} : { walletPrivateKey: walletKey as `0x${string}` }),
           rpcUrl: process.env.BASE_SEPOLIA_RPC_URL,
         },
       });
@@ -81,6 +90,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   log.info('gateway listening', {
     port: info.port,
     payments_mode: config.paymentsMode,
+    payment_signer: config.paymentsMode === 'real' ? config.paymentSigner : 'mock',
     judge_mode: config.judgeMode,
   });
 });
