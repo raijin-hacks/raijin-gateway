@@ -22,6 +22,7 @@
     "payments:pay-once": "pnpm --filter @apf/gateway payments:pay-once",
     "payments:test": "pnpm --filter @apf/gateway exec vitest run src/payments",
     "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope",
+    "merchants:attacker": "pnpm --filter @apf/merchants start:attacker",
     "paper": "node eval/paper/run.mjs",
     "eval:stub": "node --import tsx eval/api/cli.ts",
     "eval:real": "node --import tsx eval/api/cli.ts --real",

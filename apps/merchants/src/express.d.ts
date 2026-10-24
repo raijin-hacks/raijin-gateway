@@ -13,6 +13,7 @@ declare module 'express' {
     setHeader(name: string, value: number | string | readonly string[]): this;
     status(code: number): this;
     json(body: unknown): this;
+    send(body: string): this;
   }
 
   export type NextFunction = (error?: unknown) => void;
