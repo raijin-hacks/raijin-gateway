@@ -1,40 +1,36 @@
 # open issues
 
-## Payment hardening and J2b (issue #18)
+## Payment transport and settlement evidence
 
-Done in open PRs: approval-time rechecks of trust and the new-payee limit, the 300 s authorization cap, on-chain settlement proof, and the 1 MiB response cap.
+The old startup blocker is resolved in code: `apps/gateway/src/main.ts` supplies the destination verifier and pinned transport to real quote/payment composition. Approval-time trust/new-payee rechecks, the 300 s authorization cap, on-chain settlement verification, bounded reads and durable purchased-response storage are implemented. These are not proof of a successful integrated live settlement.
 
-Still open, and all needed before real payments are turned on:
-
-- [ ] Pinned connection that keeps the hostname for TLS, SNI and Host; peer verification; no redirects or proxies.
-- [ ] Wire the destination classifier and pinned connection into both the quote and paid requests.
-- [ ] **Decide the localhost exception** (chunks 1–4). The J2b spec forbids any localhost exception on the live path, but phase 4 allows HTTP for exact loopback catalog origins so the demo merchants (`http://localhost:4101–4103`) work. Keep it through the pinned transport, or move the demo merchants to HTTPS.
-- [ ] Remove the real-payment startup block in `apps/gateway/src/main.ts` last.
+Exact catalog loopback origins retain the demo HTTP exception; arbitrary localhost destinations are not admitted. An exact-loopback demonstration is not HTTPS evidence. Chunk 1 still owns integrated live settlement/recovery, facilitator identity and any CDP policy proof. No credentialed run was performed for this documentation update.
 
 ## Judge credentials and model
 
-The judge calls the API with native `fetch` and a static `x-api-key`, and `eval:real` requires `ANTHROPIC_API_KEY`. Proposal: switch to the official SDK so it resolves credentials itself, using `ant auth login` locally and workload identity federation in CI, with no key in the repo or `.env`.
+The adapter uses native `fetch`, static `x-api-key` authentication and `ANTHROPIC_API_KEY`, with a bounded deadline, response cap, no retries and fail-closed errors. The configured exact ID is `claude-sonnet-4-5-20250929`; `.env.example` agrees with the local allowlist. This records repository configuration, not newly verified provider support or a successful structured call. SDK/login/workload-identity proposals are deferred, not supported authentication paths.
 
-Decisions needed:
+- [ ] Credential ownership and billing for a local live trial.
+- [ ] Successful structured call and live evaluation with the exact model/config recorded. Deferred until credentials are available; no live CI run is implied.
 
-- [ ] Adopt the SDK transport, keeping the 5 s deadline, no retries, response cap and fail-closed errors.
-- [ ] Local policy: `ant auth login` only, or personal keys allowed too.
-- [ ] Live evals in CI or not (manual or scheduled only; each run costs money), and if yes, who sets up the WIF service account and federation rule.
-- [x] Model decided: Sonnet 4.5, exact ID `claude-sonnet-4-5-20250929`. `.env.example` now agrees with the existing allowlist. Keep native fetch and `ANTHROPIC_API_KEY`; SDK/auth redesign is deferred. Live draft/evaluation evidence remains unmeasured until a credentialed local run.
-- [ ] Billing: each person's account, or one shared service account.
+## Chunk 4 variants: historical results versus current admission
 
-## Chunk 4 variants
+The historical 17-variant `stub-approve` run stopped 9 of 10 authored `judge_only` variants before the judge:
 
-From the 17-variant `stub-approve` run: 9 of the 10 `judge_only` variants are stopped by a rule before the judge sees them.
-
-| Variants | Stopped by |
+| Variants | Historical reported catch |
 |---|---|
 | V2, V11, V12, V13, V16, V17 | `BAD_URL` |
 | V3, V10, V14 | `SECRET_IN_URL` |
 
-Also: V9 is caught pre-contact (`PARAM_NOT_IN_SCHEMA`); V16 and V14 target an uncataloged origin, and unknown routes always escalate; `path_segments` counts decoded characters.
+Those measurements and frozen labels remain unchanged. In current v1.3, unknown routes **deny**, and V6/core A14 are pre-contact `MERCHANT_NOT_SELECTED` denials. They do not establish incremental judge value. Standing grants are off by default. See the [variant interpretation](../eval/cases/variants/README.md) before using the old tables.
 
-- [ ] Chunk 4 relabels or rewrites these variants. A judge-only attack has to target a **cataloged** endpoint with valid parameters and a normal price, and carry the attack in its purpose.
+New judge-only attacks must use cataloged endpoints at selected merchants, valid parameters and ordinary prices. Request purpose/page prose is not forwarded to the judge. The supplemental matched controls already exercise this distinction without weakening admission or changing historical payloads; replacement held-out attacks still need owner review and a new version.
+
+## Dashboard operator credentials (#41)
+
+The incoming-access issue associated with `apps/dashboard/lib/gateway.ts` is addressed by `proxy.ts`: non-mock pages and APIs (including the stream) require a signed operator session before handlers attach the server-side `ADMIN_TOKEN`; API mutations require an exact same-origin header. `session.ts` requires `DASHBOARD_PASSWORD` outside mock mode and fails closed when it is absent. Passwordless access is allowed only with `MOCK=1`. The helper itself does not authenticate callers; protection depends on requests traversing the Next proxy.
+
+This is shared-password operator authentication, not named-user identity or a signature over a plan. Code inspection confirms the boundary; it is not a deployed-browser security audit. Chunk 4 owns deployment configuration and final process verification.
 
 ## Versioned evaluation and remaining evidence
 
@@ -56,3 +52,19 @@ The earlier variant counts above and `eval/REPORT.md` are historical observation
 - [ ] Confirm with chunk 4 who owns the demo agent. `apps/agent` is self-contained, so it can be handed over.
 - [ ] Demo agent payment keys don't survive a crash; recovery after a restart is not built.
 - [ ] Chunk 2 owner sign-off on the PROPOSED rules in the phase 4 and phase 6 decision records, and on the v1.2 contract changes.
+
+## Demo claims requiring Chunk 4 reconciliation
+
+`demo/SCRIPT.md` and `demo/DEVPOST.md` are Chunk 4-owned presentation drafts. Their owner must reconcile these specific stale claims before rehearsal/submission; the speaker narrative is not rewritten here:
+
+| Location | Required correction / evidence |
+|---|---|
+| SCRIPT normal-work beat and scaling/cost answers; DEVPOST Tier 1 and warm-up metrics | Standing grants are disabled by default; mandate-specific judge/human grants still exist. Verify which grant path the demo uses and measure current latency/avoided calls rather than importing old results. |
+| SCRIPT A2 headline and “Why an LLM?” (A14); DEVPOST unknown-merchant judge input | Unknown routes deny at admission; A14/V6 deny on merchant selection. Use current selected-merchant matched controls for judge value, with observed outcomes. |
+| SCRIPT preflight/merchant list; DEVPOST test merchants | Only PriceScope has an implementation under `apps/merchants/src`; the other merchants/attacker pages are fixtures or proposed infrastructure, not three running sellers. |
+| SCRIPT results; DEVPOST evaluation and “can't be prompt-injected” | Historical/stub results and canary isolation tests are not live-model accuracy, independent adaptive review or universal immunity. Preserve denominators, errors and mode labels. |
+| SCRIPT real-mode preflight/fallbacks; DEVPOST payment/recovery claim | Require observed same-candidate settlement/recovery. Agent purchase keys currently do not survive restart; a never-received response is not guaranteed recoverable. Do not imply cached/replay fallbacks are implemented without checking. |
+| SCRIPT dashboard setup; DEVPOST server-only admin token | Configure `DASHBOARD_PASSWORD` and sign in; server-side token storage alone was insufficient. #41 adds incoming access protection as described above. |
+| DEVPOST originality/sponsor claims | Chunk 4 must verify comparative and eligibility claims; no external lookup or sponsor verification was performed here. |
+
+Strict immutable-plan activation and CDP signer enforcement remain conditional targets, not claims supplied by this documentation cleanup. See [judge advisory contract gaps](judge-advisories.md).
