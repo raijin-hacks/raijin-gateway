@@ -13,3 +13,31 @@ export interface Quote {
   amount: Money;
   raw: unknown; // x402 payment requirements, passed back to pay() unchanged
 }
+export type EpochMs = number;
+export type PaymentState = 'RESERVED' | 'SIGNED' | 'SUBMITTED' | 'SETTLED' | 'FAILED' | 'UNKNOWN';
+
+export interface PaymentsModule {
+  getQuote(canonicalUrl: string, method: HttpMethod): Promise<Quote>; // throws QuoteError(code: QuoteCode)
+  pay(paymentId: string, quote: Quote): Promise< // signs exactly quote.amount
+    | { state: 'SETTLED'; txHash: string; response: { status_code: number; content_type: string; body: string } }
+    | { state: 'FAILED'; reason: string }
+    | { state: 'UNKNOWN' }
+  >;
+  reconcile(paymentId: string): Promise<'SETTLED' | 'FAILED' | 'UNKNOWN'>;
+}
+
+// Implemented by the gateway (owner B) over the payments table; used by the payments module (owner A).
+// Every method is a conditional update on the current state and returns false if it changed nothing.
+// pay() never calls fail(): a merchant's rejection proves nothing while a signed authorization is still valid.
+export interface PaymentStore {
+  get(paymentId: string): Promise<{
+    id: string; mandate_id: string; amount: Money; payee: Address; state: PaymentState;
+    nonce: string | null; valid_before: EpochMs | null; authorization_json: string | null;
+  } | null>;
+  markSigned(paymentId: string, f: { nonce: string; validBefore: EpochMs; authorizationJson: string }): Promise<boolean>; // RESERVED -> SIGNED
+  markSubmitted(paymentId: string): Promise<boolean>; // SIGNED -> SUBMITTED (before sending)
+  markUnknown(paymentId: string): Promise<boolean>; // SUBMITTED -> UNKNOWN
+  settle(paymentId: string, txHash: string): Promise<boolean>; // SIGNED|SUBMITTED|UNKNOWN -> SETTLED, moves reserved to spent
+  fail(paymentId: string): Promise<boolean>; // RESERVED|SIGNED|SUBMITTED|UNKNOWN -> FAILED, releases reserved
+  listUnresolved(): Promise<string[]>; // ids in SIGNED, SUBMITTED, UNKNOWN
+}

@@ -61,3 +61,80 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - P4: the x402 client builds a payment from the whole 402 response (`x402Version`, `resource`, `accepts`), so `pay` has to wrap `quote.raw` back into that shape (`x402Version: 2`, `accepts: [raw]`). If that proves awkward, propose a §6 change so `raw` holds the whole 402 response.
 - The JSON-body fallback expects the v2 shape (`network: eip155:84532`, `amount`). v1 bodies (`base-sepolia`, `maxAmountRequired`) come back as `QUOTE_INVALID`. None of our merchants send v1.
 - B: once `packages/contracts` lands, swap `types.ts` for the import.
+
+## 2026-10-24 · P4 `pay(paymentId, quote)` (branch `chunk1/p4-pay`)
+
+**Done**
+- `pay.ts`, wired into `createPayments({ store, config: { walletPrivateKey, rpcUrl } })` in `index.ts`. The order of writes:
+  1. From `RESERVED`, sign once with x402 `ExactEvmScheme`. Before signing, check that `quote.raw` matches `quote.amount`, `quote.payee` and `eip155:84532`; after signing, check that the authorization's `value` and `to` match the quote. Either mismatch throws, and nothing is stored or sent.
+  2. `markSigned(nonce, validBefore in ms, authorizationJson)` before anything is sent.
+  3. `markSubmitted` before the paid request. On a retry from `SUBMITTED` or `UNKNOWN` the payment is already past this point, so the step is skipped.
+  4. Send `PAYMENT-SIGNATURE` re-encoded from the stored JSON (byte-identical on every retry), with `redirect: 'manual'` and a 15 s timeout.
+  5. A 2xx whose `PAYMENT-RESPONSE` has `success` and a tx hash calls `settle` and returns `SETTLED`. Anything else (timeout, dropped connection, 402, 5xx, missing or bad header) calls `markUnknown` and returns `UNKNOWN`. `pay` never calls `store.fail`.
+- Calling `pay` on a payment that is already `SETTLED` or `FAILED`, or on an unknown id, throws.
+- Codex adversarial review (High): `pay` checked the signature only against the `Quote`, never against the payment row, so a quote for more money or another payee could be paid under a smaller reservation. Fixed: `pay` throws before signing or sending unless `quote.amount` and `quote.payee` equal the row's `amount` and `payee`, and it re-checks the authorization (fresh or stored) against the row before every send. Covered by the 4 `(d)` tests (larger amount, smaller amount, other payee, mismatched retry); removing the guard fails all 4.
+- Codex adversarial review (High): `pay` ignored `store.settle()` returning `false`, so it could report `SETTLED` while the row stayed e.g. `FAILED` with the reservation released. Fixed: on `false`, `pay` re-reads the row. If it is already `SETTLED` (recorded elsewhere), `pay` returns `SETTLED`. Otherwise it logs and throws `SettlementNotRecordedError { paymentId, txHash, state }`, and never reports `SETTLED`. Covered by the 2 `(e)` tests.
+  - Needs the team: the store has no `FAILED -> SETTLED` transition, so a late settlement after the reconciler failed a payment can't be recorded. The gateway should surface this error to an operator. A §6 proposal for a "late settle" transition (re-reserve, then spend) would close the gap.
+- Codex adversarial review (Medium x2):
+  - The signed authorization is now checked against the reservation (the row's `amount` and `payee`) right after signing, before `markSigned`, so a mismatched signature is never stored.
+  - Before signing, `quote.raw` must also be `scheme: exact` and name the USDC asset (`usdcAddress()`, shared with `getQuote`), not only the right network, amount and payee. Covered by the 2 `(d) quote.raw names ...` tests; removing the asset check fails the token test.
+  - The post-sign row check has no test of its own: the x402 client always signs what `raw` says, so a mismatch can't be produced without a fake signer.
+- Codex adversarial review (Medium): concurrent `pay()` calls for one payment could each send the stored authorization.
+  - The ledger was already safe, and a test now proves it: every write is conditional, so an ambiguous answer's `markUnknown` can't undo `SETTLED`, and the nonce prevents a second transfer. Two separate payments modules on one store (like two gateway processes) retrying at once still end `SETTLED`, never `FAILED`; one caller hears `UNKNOWN`, which is ambiguous but not wrong.
+  - Fixed within one process: an in-flight guard per `paymentId`. A concurrent call with the same quote joins the running one and gets the same result, sending nothing. One with a different quote is refused. A retry after the first call finishes sends as before. 3 new `(f)` tests plus the cross-process one; turning the guard off fails 2.
+  - Needs the team: across gateway processes, duplicate sends can still reach the merchant (harmless to the ledger, as above). Preventing them needs a store-level lease or claim (a §6 proposal), or one gateway process, or B's `idempotency_key` deduplication upstream of `pay()`.
+- Codex adversarial review (Medium): `pay()` acted on its first read of the row, so it could send after the reconciler had already marked the payment `FAILED`.
+  - Already harmless after the P5 finality fix: the reconciler only fails `SUBMITTED`/`UNKNOWN` once a finalized block is past `validBefore`, when USDC rejects the authorization, so a send in that window can't settle. A merchant claiming otherwise still raises `SettlementNotRecordedError`.
+  - Fixed anyway, to stop pointless sends and misleading answers:
+    - `pay()` re-reads the row right before sending. `FAILED` returns `{ state: 'FAILED' }` without sending; any other non-sendable state returns `UNKNOWN`.
+    - A retry whose stored `validBefore` has passed by the local clock is not resent (it can't settle); the reconciler resolves it. Using the local clock is safe here: skew can only cause a skipped send, never a wrong decision.
+    - If `markUnknown` changes nothing because the row became `FAILED` in flight, `pay()` reports `FAILED` instead of `UNKNOWN`.
+  - `pay()` still never calls `store.fail`; it only reports the store's answer. 3 new `(g)` tests; removing each protection fails its test.
+- `testing/memory-store.ts`: an in-memory `PaymentStore` with conditional transitions and a call log, used until Chunk 2's store lands.
+- `pay.test.ts`: (a) a dropped connection, a 402, a 500, and a 200 without a settlement header all end `UNKNOWN` with no `fail` call, and the row is already `SUBMITTED` when the merchant receives the payment. (b) A retry sends a byte-identical header, `markSigned` is called once, and the retry settles. (c) is `reconcile`, still marked `todo` until P5.
+  - Mutation-checked: moving `markSubmitted` after the send fails (a); calling `fail` on a bad merchant response fails the 3 variants; re-signing on retry fails (b).
+
+**Open**
+- Not run against the live merchant with the real wallet yet: that spends 0.01 test USDC and needs the `.env` key.
+- The validity window is `maxTimeoutSeconds` from the merchant's requirements (300 s = 5 min for PriceScope). We can't shorten it without the merchant rejecting the payment, so a merchant asking for a long window gets one. Tier 0 could cap `maxTimeoutSeconds`.
+- `MERCHANT_KEYS_JSON` is not attached yet: the spec doesn't name the header, so this needs a decision.
+- The merchant response body is read in full (no cap). Decide whether `/pay` needs one.
+- Design.md says a "definitive facilitator rejection" means `FAILED`; the chunk file and P4 say `pay` never fails. We follow the chunk file, so only the reconciler fails payments. Flag to the team.
+
+## 2026-10-24 · P5 `reconcile(paymentId)` and `startReconciler` (branch `chunk1/p4-pay`)
+
+**Done**
+- `reconcile.ts`, wired into `createPayments` (`rpcUrl` comes from `BASE_SEPOLIA_RPC_URL`); `startReconciler` is exported from `index.ts`.
+  - `SIGNED` -> `fail`, with no chain or merchant contact. If `pay` is mid-flight, its `markSubmitted` then fails and it sends nothing.
+  - `SUBMITTED` / `UNKNOWN`: read `USDC.authorizationState(authorizer, nonce)` at the latest block (the authorizer comes from the stored authorization).
+    - Used: find the `AuthorizationUsed(authorizer, nonce)` event and `settle(txHash)`, or `settle("unknown")` if it can't be found.
+    - Unused and that block's timestamp >= `validBefore`: `fail`. USDC rejects an authorization once `block.timestamp >= validBefore`, so this is proof it can never settle. Expiry is judged by chain time, never the local clock.
+    - Otherwise, or if the RPC fails: left as is, returns `UNKNOWN`.
+  - `SETTLED` / `FAILED` are returned as they are; `RESERVED` returns `UNKNOWN`. Every transition goes through the store's conditional updates, so running the reconciler twice changes nothing.
+  - `startReconciler(payments, store, intervalMs = 10_000)`: one pass immediately, then one every interval after the previous pass ends (passes never overlap). An error on one payment is logged and the pass continues. Returns `stop()`; the timer is `unref`'d.
+- Confirmed on-chain before relying on it: for the P2 settlement (block 49499677), `authorizationState` returns `true` for its nonce and `false` for a random one, and its receipt has `AuthorizationUsed` with the nonce as topic 2.
+- Tx-hash lookup: the public RPC caps `eth_getLogs` at 200 blocks, so the search goes backwards in 200-block windows from just past `validBefore`, covering 15 min of chain time (at most 50 queries).
+  - The first version assumed 2 s blocks. Real Base Sepolia runs at about 0.2 s, so the live check recorded `"unknown"` for the real P2 payment. Fixed by measuring block time over the last 1,000 blocks. A regression test uses 1 s fake blocks.
+- Live check (read-only, no key needed): an `UNKNOWN` row for the real P2 nonce -> `SETTLED` with tx `0xbcf31d3f…a41abb15`; an expired, unused nonce -> `FAILED`; a still-valid, unused nonce -> left `UNKNOWN`.
+- `reconcile.test.ts`: 14 tests against a fake JSON-RPC endpoint whose clock is far behind the local clock, so a `Date.now()` implementation fails. `(c)` in `pay.test.ts` is no longer `todo`.
+  - Mutation-checked: a local-clock expiry fails 2 tests; leaving `SIGNED` alone fails 3; ignoring `authorizationState` fails 5.
+- Codex adversarial review (High): an RPC failure, or a row missing data, could leave a payment unresolved forever. We kept "never fail without proof" (an unreadable chain is not evidence the merchant didn't settle) and fixed what was wrong:
+  - Wrong-chain RPC: every chain read is now preceded by a `chainId === 84532` check. Before, an RPC on another network read every nonce as unused and **failed payments that had settled**. Verified live: pointed at Base mainnet, both payments stay `UNKNOWN`; before the fix, the expired one was failed.
+  - Unreadable `authorization_json`: the authorizer falls back to our own wallet (we only sign as it), so the payment still resolves.
+  - Not silent: `config.onStuck(paymentId, reason)` plus `console.error('[reconciler] STUCK …')`, once per payment. It fires for a chain that is still unreadable 10 min past `validBefore` (local clock, used only for alerting, never for decisions), a missing nonce, or a missing `validBefore` with an unused nonce. Chunk 2 should wire `onStuck` to an operator alert.
+  - 5 new tests; removing the chain-id check fails the wrong-chain test.
+- Codex adversarial review (High): `fail` was decided on the `latest` block, which can be reorged away. A fork without the settlement could read "unused, past validBefore", the row became `FAILED` with the budget released, and the canonical chain then held the settlement. Fixed: `FAILED` now needs the **finalized** block (Base Sepolia: about 16 min / 4,700 blocks behind latest, measured live) to be at or past `validBefore` with the nonce unused **at that finalized block**. Finalized blocks can't change and USDC rejects the authorization after `validBefore`, so this is real proof. A nonce used at the finalized block settles.
+  - Cost: an expired, unused payment releases its budget about 16 min after `validBefore` instead of right away. `STUCK_AFTER` was raised to 30 min so payments waiting for finality aren't reported as stuck.
+  - Settling on a "used" reading at `latest` is unchanged. If that block is reorged away, the budget was counted as spent early, which is conservative.
+  - 3 new tests (expired at latest but not at finalized -> wait; finalized proof -> `FAILED`, read at the finalized block; reorg -> `SETTLED`, never `FAILED`). Deciding on `latest` again fails all 3. Live: an old expired nonce -> `FAILED`, a nonce expired 60 s ago -> `UNKNOWN`, the real P2 payment -> `SETTLED` with its tx.
+  - With this, the reconciler can no longer cause the "late settlement after `FAILED`" case. `SettlementNotRecordedError` now only fires if a merchant claims a settlement that the finalized chain shows never happened.
+- Suite: 59 tests, 59 pass.
+- Codex adversarial review, round 2 (1 Medium, 2 Low), reviewed with no behavior change:
+  - Snapshot vs. later state, non-atomic chain read and update: `reconcile(id)` re-reads the row, so the ID snapshot can't go stale in a harmful way. Both facts acted on can't be reversed (a finalized "unused past validBefore" never changes; a used nonce only reverses by reorg, which would just mean the budget was counted as spent early). Conditional updates block regressions. Races with `pay()` are covered by the `(f)` and `(g)` tests. Option for B: expose a promise for the first pass so the gateway can wait for startup recovery.
+  - Tx hash `"unknown"`: as specified. The row keeps the nonce, and `AuthorizationUsed` indexes it, so the transaction can be found later.
+  - `SIGNED` failed without a chain check: as specified, and test `(c)` asserts no chain calls. The invariant (never send before `markSubmitted`) is enforced by the order of writes plus the pre-send re-read, and tested by `(a)`. A comment at `markSubmitted` in `pay.ts` now states the dependency.
+
+**Open**
+- A late settlement after `FAILED` still can't be recorded (no `FAILED -> SETTLED` transition); see the P4 note. The reconciler only fails at or after `validBefore` on chain time, which makes this rare. `pay`'s `SettlementNotRecordedError` still covers it.
+- Chunk 2 must call `startReconciler` at gateway startup and `stop()` it on shutdown.
+- Not yet covered: A19 (kill the gateway between `markSubmitted` and the response, restart, reconciler resolves it) needs B's real store.
