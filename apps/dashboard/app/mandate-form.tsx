@@ -21,7 +21,11 @@ export default function MandateForm() {
   const [expiryMinutes, setExpiryMinutes] = useState("30");
 
   const [error, setError] = useState("");
-  const [result, setResult] = useState<unknown>(null);
+    // The token is shown only right after creation, then cleared for good
+  const [newToken, setNewToken] = useState<{ mandateId: string; token: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  // Mandates created since this page loaded (no GET /mandates yet)
+  const [active, setActive] = useState<{ id: string; task: string }[]>([]);
 
   // Load agents and merchants once when the form appears
   useEffect(() => {
@@ -68,7 +72,25 @@ export default function MandateForm() {
         expires_in_ms: minutes * 60 * 1000,
       }),
     });
-    setResult(await res.json());
+        const data = await res.json();
+    if (!res.ok) return setError("Could not create the mandate.");
+    setNewToken({ mandateId: data.mandate_id, token: data.token });
+    setCopied(false);
+    setActive([{ id: data.mandate_id, task: task.trim() }, ...active]);
+    // Clear the form for the next mandate
+    setTask(""); setSubjects([]); setMerchantIds([]);
+  }
+
+  async function closeMandate(id: string) {
+    const res = await fetch(`/api/mandates/${id}/close`, { method: "POST" });
+    if (!res.ok) return setError(`Could not close ${id}.`);
+    setActive(active.filter((m) => m.id !== id));
+  }
+
+  async function copyToken() {
+    if (!newToken) return;
+    await navigator.clipboard.writeText(newToken.token);
+    setCopied(true);
   }
 
   const input = "w-full rounded border border-gray-600 bg-transparent px-2 py-1";
@@ -126,8 +148,34 @@ export default function MandateForm() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       <button type="submit" className="rounded bg-blue-600 px-4 py-1">Create mandate</button>
 
-      {result !== null && (
-        <pre className="overflow-x-auto text-xs">{JSON.stringify(result, null, 2)}</pre>
+            {newToken && (
+        <div className="rounded border border-amber-500 p-3 text-sm">
+          <p className="font-semibold text-amber-400">
+            Copy this token now. It won&apos;t be shown again.
+          </p>
+          <p className="mt-1 break-all font-mono">{newToken.token}</p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={copyToken} className="rounded border px-2">
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <button type="button" onClick={() => setNewToken(null)} className="rounded border px-2">
+              Done, hide it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {active.length > 0 && (
+        <div>
+          <h3 className="font-semibold">Active mandates</h3>
+          {active.map((m) => (
+            <div key={m.id} className="flex items-center justify-between border-b border-gray-700 py-1 text-sm">
+              <span><span className="font-mono">{m.id}</span> · {m.task}</span>
+              <button type="button" onClick={() => closeMandate(m.id)}
+                className="rounded border border-red-500 px-2 text-red-400">Close</button>
+            </div>
+          ))}
+        </div>
       )}
     </form>
   );
