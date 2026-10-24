@@ -116,7 +116,13 @@ const PROPOSED_COLUMNS: Record<string, string[]> = {
   decisions: ['request_json'],
   payments: ['quote_json', 'response_json', 'day'],
 };
-const PROPOSED_TABLES = ['standing_grant_usage', 'tenant_daily'];
+const PROPOSED_TABLES = [
+  'gateway_secrets',
+  'pay_workflows',
+  'pay_review_events',
+  'standing_grant_usage',
+  'tenant_daily',
+];
 
 describe('the migrated schema matches final_contracts.md section 1', () => {
   const db = openDb(':memory:');
@@ -216,7 +222,7 @@ describe('database setup', () => {
   it('applies the migration once and can reopen the same file', () => {
     const db = tempDb();
     const again = openDb(db.sqlite.name);
-    expect(count(again, '__drizzle_migrations')).toBe(1);
+    expect(count(again, '__drizzle_migrations')).toBe(3);
     expect(tableNames(again)).toEqual(tableNames(db));
     again.sqlite.close();
   });

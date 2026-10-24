@@ -58,3 +58,6 @@ export { createJudge, validateJudgeConfig } from './real.js';
 export type { JudgeConfig, JudgeDependencies } from './real.js';
 
 export { buildInput } from './input.js';
+
+export { createGatewayAdmission, runGatewayJudge } from './gateway.js';
+export type { AdmittedRoute, AdmissionHold, GatewayJudgeResult } from './gateway.js';

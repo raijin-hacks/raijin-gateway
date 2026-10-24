@@ -50,7 +50,7 @@ describe('reason codes', () => {
 
   it('list every code exactly once', () => {
     expect(new Set(REASON_CODES).size).toBe(REASON_CODES.length);
-    expect(REASON_CODES).toHaveLength(45);
+    expect(REASON_CODES).toHaveLength(47);
   });
 
   it('map every code to the table row it appears in', () => {
@@ -71,6 +71,7 @@ describe('reason codes', () => {
         'SUBJECT_NOT_IN_MANDATE',
         'TRUST_REQUIRES_HUMAN',
         'UNKNOWN_WITH_PARAMS',
+        'UNCATALOGED_ENDPOINT',
       ].sort(),
     );
   });

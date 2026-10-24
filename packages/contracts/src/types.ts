@@ -11,10 +11,10 @@ export type Stage = 'precontact' | 'tier0' | 'tier1' | 'judge' | 'human';
 export type PaymentState = 'RESERVED' | 'SIGNED' | 'SUBMITTED' | 'SETTLED' | 'FAILED' | 'UNKNOWN';
 
 export type PrecontactCode = 'NO_MANDATE' | 'QUARANTINED' | 'DENYLIST' | 'SECRET_IN_URL' | 'QUERY_TOO_LONG'
-  | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL';
+  | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL' | 'UNCATALOGED_ENDPOINT';
 export type QuoteCode = 'QUOTE_FAILED' | 'NOT_402' | 'QUOTE_INVALID';
 export type Tier0Code = 'NETWORK' | 'PAYEE_SWAP' | 'PER_CALL_CAP' | 'REFERENCE_PRICE' | 'PRICE_MISMATCH'
-  | 'MANDATE_BUDGET' | 'TENANT_DAILY' | 'VELOCITY' | 'DUPLICATE' | 'NEW_PAYEE_LIMIT';
+  | 'MANDATE_BUDGET' | 'TENANT_DAILY' | 'VELOCITY' | 'DUPLICATE' | 'NEW_PAYEE_LIMIT' | 'INTERNAL_ERROR';
 export type Tier1Code = 'GRANT_HIT' | 'GRANT_NONE' | 'GRANT_PRICE' | 'GRANT_ENDPOINT' | 'GRANT_METHOD'
   | 'GRANT_PARAMS' | 'GRANT_TRUST' | 'GRANT_EXHAUSTED' | 'MERCHANT_NOT_SELECTED';
 export type JudgeCode = 'JUDGE_APPROVED' | 'JUDGE_OFF_TASK' | 'JUDGE_OVER_SCOPED' | 'JUDGE_UNKNOWN_MERCHANT'
@@ -33,7 +33,7 @@ export interface PayRequest {
 
 export type PayResponse =
   | { status: 'approved'; decision_id: string; payment_id: string; stage: Stage; amount: Money; payee: Address;
-      response: { status_code: number; content_type: string; body: string } }
+      response: { status_code: number; content_type: string; body: string } | null }
   | { status: 'denied'; decision_id: string; stage: Stage; reasons: ReasonCode[]; explanation: string | null }
   | { status: 'pending'; decision_id: string; poll_after_ms: number }
   | { status: 'payment_unknown'; decision_id: string; payment_id: string; poll_after_ms: number };
@@ -130,7 +130,7 @@ export interface JudgeOutput {
   injection_suspected: boolean;
   grant?: { max_per_call: Money; max_total: Money; ttl_ms: number };
 }
-// Built by the gateway (owner B), read only by buildInput (owner C). Every field here is trusted or non-text.
+// Built by the gateway (owner B), projected only by buildInput (owner C). Raw match parameter values remain untrusted.
 export interface JudgeContext {
   mandate: { task: string; subjects: string[]; allowed_merchant_ids: string[]; budget_remaining: Money; expires_in_ms: number };
   role_policy: string;

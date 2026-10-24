@@ -42,11 +42,12 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
       `UPDATE payments SET state = '${to}'${extraSet}, updated_at = :now
         WHERE id = :payment_id AND state = '${from}'`,
     );
-  const markSigned = transition(
-    'RESERVED',
-    'SIGNED',
-    ', nonce = :nonce, valid_before = :valid_before, authorization_json = :authorization_json',
-  );
+  const markSigned = sqlite.prepare(`UPDATE payments SET state = 'SIGNED', nonce = :nonce,
+    valid_before = :valid_before, authorization_json = :authorization_json, updated_at = :now
+    WHERE id = :payment_id AND state = 'RESERVED'
+      AND EXISTS (SELECT 1 FROM mandates m JOIN decisions d ON d.mandate_id = m.id
+        JOIN sessions s ON s.id = d.session_id WHERE d.id = payments.decision_id
+        AND m.status = 'active' AND m.expires_at > :now AND s.status = 'active' AND s.trust >= 20)`);
   const markSubmitted = transition('SIGNED', 'SUBMITTED');
   const markUnknown = transition('SUBMITTED', 'UNKNOWN');
 

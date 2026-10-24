@@ -1,4 +1,4 @@
-# Agent Payment Firewall: Contracts v1.1
+# Agent Payment Firewall: Contracts v1.2
 
 v1.1: added `GET /catalog`, `PaymentStore`, `EndpointMatch`, `JudgeContext`; grant clamping moved to the gateway; `pay()` never marks a payment failed.
 
@@ -242,14 +242,14 @@ Request:
   "method": "GET",
   "expected_price": 10000,
   "purpose": "fetch_data",
-  "idempotency_key": "01JB7XK3..."
+  "idempotency_key": "12345678-1234-4234-8234-123456789abc"
 }
 ```
 
 - `purpose` is one of the `PurposeCode` values (section 5).
-- `idempotency_key` is required. The same key under the same mandate returns the same decision and payment, never a second payment. This is how retries stay safe (A18).
+- `idempotency_key` and a matching UUIDv4 `Idempotency-Key` header are required (UUID case is normalized). The same key under the same mandate returns the existing decision/payment. A changed authorization-relevant request under that key returns 409. This is how retries stay safe (A18).
 
-Responses, always HTTP 200 for a decision; 400 for malformed input; 401 for a bad or expired token:
+Responses: HTTP 200 for decisions; 202 for an in-progress replay handle; 400 for malformed input; 401 for a bad or expired token; 409 for a conflicting idempotency binding:
 
 ```json
 { "status": "approved", "decision_id": "dec_...", "payment_id": "pay_...",
@@ -285,15 +285,15 @@ Responses, always HTTP 200 for a decision; 400 for malformed input; 401 for a ba
 
 | Stage | Codes |
 |---|---|
-| Pre-contact | `NO_MANDATE`, `QUARANTINED`, `DENYLIST`, `SECRET_IN_URL`, `QUERY_TOO_LONG`, `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `DUPLICATE_PARAM`, `BAD_URL` |
+| Pre-contact | `NO_MANDATE`, `QUARANTINED`, `DENYLIST`, `SECRET_IN_URL`, `QUERY_TOO_LONG`, `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `DUPLICATE_PARAM`, `BAD_URL`, `UNCATALOGED_ENDPOINT` |
 | Quote | `QUOTE_FAILED`, `NOT_402`, `QUOTE_INVALID` |
-| Tier 0 | `NETWORK`, `PAYEE_SWAP`, `PER_CALL_CAP`, `REFERENCE_PRICE`, `PRICE_MISMATCH`, `MANDATE_BUDGET`, `TENANT_DAILY`, `VELOCITY`, `DUPLICATE`, `NEW_PAYEE_LIMIT` |
+| Tier 0 | `NETWORK`, `PAYEE_SWAP`, `PER_CALL_CAP`, `REFERENCE_PRICE`, `PRICE_MISMATCH`, `MANDATE_BUDGET`, `TENANT_DAILY`, `VELOCITY`, `DUPLICATE`, `NEW_PAYEE_LIMIT`, `INTERNAL_ERROR` |
 | Tier 1 (logged on miss; hit approves) | `GRANT_HIT`, `GRANT_NONE`, `GRANT_PRICE`, `GRANT_ENDPOINT`, `GRANT_METHOD`, `GRANT_PARAMS`, `GRANT_TRUST`, `GRANT_EXHAUSTED`, `MERCHANT_NOT_SELECTED` |
 | Judge | `JUDGE_APPROVED`, `JUDGE_OFF_TASK`, `JUDGE_OVER_SCOPED`, `JUDGE_UNKNOWN_MERCHANT`, `JUDGE_PRICE_UNUSUAL`, `JUDGE_UNEXPECTED_PARAMS`, `JUDGE_INJECTION_SUSPECTED`, `JUDGE_ERROR`, `JUDGE_INVALID_OUTPUT` |
 | Human | `HUMAN_APPROVED`, `HUMAN_REJECTED`, `HUMAN_TIMEOUT` |
 | Trust routing | `TRUST_REQUIRES_HUMAN` |
 
-Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `REFERENCE_PRICE`, `NEW_PAYEE_LIMIT`, `TRUST_REQUIRES_HUMAN`. Every other code in those stages denies.
+Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `REFERENCE_PRICE`, `NEW_PAYEE_LIMIT`, `TRUST_REQUIRES_HUMAN`, `UNCATALOGED_ENDPOINT`. Every other code in those stages denies.
 
 ### Pipeline order (fixed)
 
@@ -387,7 +387,7 @@ Any parameter not declared at all is treated as `forbidden`.
 ### Canonical URL rules
 
 1. Parse with the WHATWG `URL` parser; reject anything else as `BAD_URL`.
-2. Scheme must be `https` (or `http` only for `localhost` and `*.test` in dev).
+2. Scheme must be `https`. The operator-bound parser permits exact cataloged HTTP loopback origins only, per `CHUNK-3-PHASE4-DECISIONS.md`; no agent-selectable dev flag or generic `*.test` exception is allowed. Live contact additionally requires the pending J2b checked transport.
 3. Lowercase the host; drop default ports, the fragment and userinfo (userinfo present means `BAD_URL`).
 4. Percent-decode the path once; reject `..` segments and empty segments.
 5. A repeated query parameter means `DUPLICATE_PARAM`.
@@ -424,7 +424,7 @@ C's input builder is the **only** code allowed to construct judge input, and it 
 }
 ```
 
-For an unknown merchant or endpoint:
+Unknown merchant/endpoint shape is retained for internal diagnostics and compatibility. In v1.2 every unknown route is intercepted before quote, grants or judge; this shape must never be sent to the model:
 
 ```json
 "merchant": { "known": false, "selected_for_mandate": false },
@@ -478,10 +478,10 @@ export type Stage = 'precontact' | 'tier0' | 'tier1' | 'judge' | 'human';
 export type PaymentState = 'RESERVED' | 'SIGNED' | 'SUBMITTED' | 'SETTLED' | 'FAILED' | 'UNKNOWN';
 
 export type PrecontactCode = 'NO_MANDATE' | 'QUARANTINED' | 'DENYLIST' | 'SECRET_IN_URL' | 'QUERY_TOO_LONG'
-  | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL';
+  | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL' | 'UNCATALOGED_ENDPOINT';
 export type QuoteCode = 'QUOTE_FAILED' | 'NOT_402' | 'QUOTE_INVALID';
 export type Tier0Code = 'NETWORK' | 'PAYEE_SWAP' | 'PER_CALL_CAP' | 'REFERENCE_PRICE' | 'PRICE_MISMATCH'
-  | 'MANDATE_BUDGET' | 'TENANT_DAILY' | 'VELOCITY' | 'DUPLICATE' | 'NEW_PAYEE_LIMIT';
+  | 'MANDATE_BUDGET' | 'TENANT_DAILY' | 'VELOCITY' | 'DUPLICATE' | 'NEW_PAYEE_LIMIT' | 'INTERNAL_ERROR';
 export type Tier1Code = 'GRANT_HIT' | 'GRANT_NONE' | 'GRANT_PRICE' | 'GRANT_ENDPOINT' | 'GRANT_METHOD'
   | 'GRANT_PARAMS' | 'GRANT_TRUST' | 'GRANT_EXHAUSTED' | 'MERCHANT_NOT_SELECTED';
 export type JudgeCode = 'JUDGE_APPROVED' | 'JUDGE_OFF_TASK' | 'JUDGE_OVER_SCOPED' | 'JUDGE_UNKNOWN_MERCHANT'
@@ -500,7 +500,7 @@ export interface PayRequest {
 
 export type PayResponse =
   | { status: 'approved'; decision_id: string; payment_id: string; stage: Stage; amount: Money; payee: Address;
-      response: { status_code: number; content_type: string; body: string } }
+      response: { status_code: number; content_type: string; body: string } | null }
   | { status: 'denied'; decision_id: string; stage: Stage; reasons: ReasonCode[]; explanation: string | null }
   | { status: 'pending'; decision_id: string; poll_after_ms: number }
   | { status: 'payment_unknown'; decision_id: string; payment_id: string; poll_after_ms: number };
@@ -597,7 +597,7 @@ export interface JudgeOutput {
   injection_suspected: boolean;
   grant?: { max_per_call: Money; max_total: Money; ttl_ms: number };
 }
-// Built by the gateway (owner B), read only by buildInput (owner C). Every field here is trusted or non-text.
+// Built by the gateway (owner B), projected only by buildInput (owner C). Raw match parameter values remain untrusted.
 export interface JudgeContext {
   mandate: { task: string; subjects: string[]; allowed_merchant_ids: string[]; budget_remaining: Money; expires_in_ms: number };
   role_policy: string;
@@ -628,3 +628,7 @@ export type StreamEvent =
 3. Everyone pulls before prompting their coding agent again.
 
 No one changes a contract silently inside their own module.
+
+## Mixed PR phase 6 amendment (v1.2)
+
+This mixed Chunk 2/3 implementation adds `UNCATALOGED_ENDPOINT` (pre-contact escalation for every unknown route, including routes without parameters), `INTERNAL_ERROR` (fail-closed internal denial recorded at Tier 0), and permits `approved.response: null` after reconciliation when merchant content is unavailable. Unknown-route review cannot bypass catalog admission. `/pay` requires the existing body key and a matching UUIDv4 `Idempotency-Key` header; conflicts return 409, in-progress replays return 202 with the existing pending handle. Other decision responses remain 200. Human approvals are request scoped and cannot override hard checks. The proposed amendments are explicit for owner review; no team sign-off is claimed.
