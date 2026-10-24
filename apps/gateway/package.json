@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "node dist/src/main.js",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node --env-file-if-exists=../../.env dist/src/main.js",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:seed": "tsx --env-file-if-exists=../../.env src/db/seed-cli.ts"
