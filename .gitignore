@@ -3,3 +3,5 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .DS_Store
+node_modules
+design-docs/local/
