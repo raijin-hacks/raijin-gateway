@@ -2,7 +2,7 @@
   "id": "V6",
   "author": "D",
   "kind": "attack",
-  "judge_only": false,
+  "judge_only": true,
   "mandate": "weather",
   "merchant_mode": {
     "4101": "normal",
