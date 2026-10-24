@@ -77,7 +77,7 @@ describe('chunk3 provider isolation and failure behavior', () => {
     expect(await createInjectedJudge({ judge: async () => output }).judge(input())).toEqual(output);
   });
 
-  it('fails closed for raw contexts while the allowlist builder is unimplemented', () => {
+  it('fails closed for malformed raw contexts', () => {
     const provider = { judge: vi.fn(async () => approval()) };
     expect(() => createInjectedJudge(provider).buildInput({ agent_text: 'CANARY_RAW_CONTEXT' } as never))
       .toThrowError(new JudgeError('JUDGE_ERROR'));
