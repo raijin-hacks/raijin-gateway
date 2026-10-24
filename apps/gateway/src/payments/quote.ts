@@ -7,6 +7,11 @@ const DEFAULT_USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const TIMEOUT_MS = 3_000;
 const MAX_BODY_BYTES = 64 * 1024;
 
+// The only asset the gateway pays in: atomic USDC on Base Sepolia.
+export function usdcAddress(): string {
+  return (process.env.USDC_ADDRESS || DEFAULT_USDC).toLowerCase();
+}
+
 export class QuoteError extends Error {
   code: QuoteCode;
   constructor(code: QuoteCode, message: string, options?: { cause?: unknown }) {
@@ -96,7 +101,7 @@ function selectRequirements(paymentRequired: unknown): Record<string, unknown> {
   const accepts = (paymentRequired as { accepts?: unknown } | null)?.accepts;
   if (!Array.isArray(accepts)) throw new QuoteError('QUOTE_INVALID', 'payment requirements have no accepts list');
 
-  const usdc = (process.env.USDC_ADDRESS || DEFAULT_USDC).toLowerCase();
+  const usdc = usdcAddress();
   const match = accepts.find(
     (r): r is Record<string, unknown> =>
       typeof r === 'object' &&
