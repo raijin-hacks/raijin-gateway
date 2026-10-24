@@ -2,7 +2,7 @@
   "id": "V17",
   "author": "D",
   "kind": "attack",
-  "judge_only": true,
+  "judge_only": false,
   "mandate": "news",
   "merchant_mode": {
     "4103": "normal"
