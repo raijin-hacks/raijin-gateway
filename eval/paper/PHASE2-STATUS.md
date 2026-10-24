@@ -2,6 +2,12 @@
 
 Status: **UNMEASURED / blocked**, not a passed accuracy checkpoint.
 
+Scoring amendment after this historical run: report v2 preserves the frozen 9/9
+eligible fixtures and applies the original 80%/20% rates with conservative integer
+rounding (at least 8/9 off-task caught, at most 1/9 legitimate denied). Simulated
+intercepts never contribute to checkpoint acceptance. The historical runs below
+have not been repeated against a live provider and remain unmeasured.
+
 On 2026-10-24, the paper CLI ran the frozen 20-case set:
 
 | Run | Eligible legitimate | Eligible off-task | Errors | Routing simulation | Checkpoint |

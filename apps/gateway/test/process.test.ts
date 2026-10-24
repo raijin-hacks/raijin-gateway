@@ -1,15 +1,21 @@
 // The entry points as real processes: main.ts boots, seeds, serves and shuts down cleanly;
 // seed-cli.ts seeds a database file. Slower than the rest (each spawn starts tsx), so the
 // tests run concurrently, each with its own context-bound cleanup.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Catalog } from '@apf/contracts';
 import { describe, expect, it, type TestContext } from 'vitest';
 import { openDb } from '../src/db/client.js';
 import { FIXTURE_CATALOG_PATH, count } from './harness/db.js';
 import { runScript } from './harness/process.js';
 
 const ADMIN_TOKEN = 'process-test-admin-token';
+// Per test, inherited by the nested catalog-admission suites. On CI with 39 isolated
+// workers, single-start cases take 4–5 s; several cases launch two cold tsx children.
+// Allow 30 s for both startups and database assertions without changing the
+// gateway's deadlines or weakening assertions. All other suites keep their defaults.
+const PROCESS_TEST_TIMEOUT_MS = 30_000;
 
 /** A temp database path, a script runner, and cleanup bound to this test. */
 function sandbox({ onTestFinished }: TestContext) {
@@ -28,7 +34,65 @@ function countsIn(path: string) {
   return result;
 }
 
-describe.concurrent('main.ts', () => {
+describe.concurrent('main.ts', { timeout: PROCESS_TEST_TIMEOUT_MS }, () => {
+  const invalidCatalogs: [string, (catalog: Catalog) => void][] = [
+    ['duplicate ID', (c) => c.merchants.push(structuredClone(c.merchants[0]!))],
+    [
+      'dangling grant',
+      (c) => {
+        c.standing_grants[0]!.endpoint_id = 'end_missing';
+      },
+    ],
+    [
+      'overlap',
+      (c) => {
+        const endpoint = structuredClone(c.merchants[0]!.endpoints[0]!);
+        endpoint.id = 'end_overlap';
+        endpoint.path = '/v1/pricing/acme';
+        endpoint.params = {};
+        c.merchants[0]!.endpoints.push(endpoint);
+      },
+    ],
+  ];
+  describe.each(['src/main.ts', 'src/db/seed-cli.ts'])('%s catalog admission', (script) => {
+    it.for(invalidCatalogs)(
+      'rejects %s before creating or migrating a database',
+      async ([_name, mutate], ctx) => {
+        const { databasePath, run } = sandbox(ctx);
+        const catalog: Catalog = JSON.parse(readFileSync(FIXTURE_CATALOG_PATH, 'utf8'));
+        mutate(catalog);
+        const path = databasePath + '.catalog.json';
+        writeFileSync(path, JSON.stringify(catalog));
+        const process = run(script, {
+          ADMIN_TOKEN,
+          DATABASE_PATH: databasePath,
+          CATALOG_PATH: path,
+          PORT: '0',
+        });
+        expect(await process.exited).not.toBe(0);
+        expect(process.stderr()).toContain('Invalid catalog');
+        expect(process.lines).not.toContainEqual(
+          expect.objectContaining({ msg: 'gateway listening' }),
+        );
+        expect(existsSync(databasePath)).toBe(false);
+        expect(existsSync(databasePath + '-wal')).toBe(false);
+
+        // Existing databases must also remain byte-for-byte unchanged.
+        const existing = openDb(databasePath);
+        existing.sqlite.close();
+        const before = readFileSync(databasePath);
+        const retry = run(script, {
+          ADMIN_TOKEN,
+          DATABASE_PATH: databasePath,
+          CATALOG_PATH: path,
+          PORT: '0',
+        });
+        expect(await retry.exited).not.toBe(0);
+        expect(retry.stderr()).toContain('Invalid catalog');
+        expect(readFileSync(databasePath)).toEqual(before);
+      },
+    );
+  });
   it('seeds the database, serves requests, and exits 0 on SIGTERM', async (ctx) => {
     const { databasePath, run } = sandbox(ctx);
     const gateway = run('src/main.ts', {

@@ -193,6 +193,12 @@ describe('trusted catalog loading', () => {
     });
     expect(() => load(c)).not.toThrow();
   });
+  it.each(['__proto__', 'constructor', 'toString'])('requires an own path declaration for %s', name => {
+    const c = fresh();
+    c.merchants[0]!.endpoints[0]!.path = `/v1/pricing/{${name}}`;
+    c.merchants[0]!.endpoints[0]!.params = {};
+    expect(() => load(c)).toThrow(/missing path parameter/);
+  });
   it.each([null, {}, { ...fresh(), version: 2 }, { ...fresh(), unexpected: true }])(
     'rejects invalid schema %#',
     (value) => {
