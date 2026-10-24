@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { StreamEvent } from "../lib/contracts";
 import { formatMoney } from "../lib/money";
+import { subscribe } from "../lib/stream";
 
 const MAX_ROWS = 500;
 
@@ -21,32 +22,13 @@ export default function EventFeed() {
   const [openKey, setOpenKey] = useState<number | null>(null);
   const nextKey = useRef(0);
 
-  useEffect(() => {
-    // Our own route; it proxies the gateway or sends mock events when MOCK=1
-    const source = new EventSource("/api/stream");
-    // Collect events and render at most once per frame, so a burst doesn't re-render per event
-    let buffer: Row[] = [];
-    let frame = 0;
-
-    source.onmessage = (message) => {
-      const event: StreamEvent = JSON.parse(message.data);
-      if (event.type !== "decision") return;
-      buffer.push({ key: nextKey.current++, event });
-      if (!frame) frame = requestAnimationFrame(flush);
-    };
-
-    function flush() {
-      frame = 0;
-      const incoming = buffer.reverse(); // newest first
-      buffer = [];
-      setRows((prev) => [...incoming, ...prev].slice(0, MAX_ROWS));
+  useEffect(() => subscribe((events) => {
+    const incoming: Row[] = [];
+    for (const event of events) {
+      if (event.type === "decision") incoming.unshift({ key: nextKey.current++, event }); // newest first
     }
-
-    return () => { // stop the stream when the page closes
-      source.close();
-      cancelAnimationFrame(frame);
-    };
-  }, []);
+    if (incoming.length > 0) setRows((prev) => [...incoming, ...prev].slice(0, MAX_ROWS));
+  }), []);
 
   return (
     <section>

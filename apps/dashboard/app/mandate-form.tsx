@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { rememberMandateTask } from "../lib/mandate-tasks";
 import { dollarsToAtomic } from "../lib/money";
 
 type Agent = { id: string; name: string };
@@ -77,6 +78,7 @@ export default function MandateForm() {
     setNewToken({ mandateId: data.mandate_id, token: data.token });
     setCopied(false);
     setActive([{ id: data.mandate_id, task: task.trim() }, ...active]);
+    rememberMandateTask(data.mandate_id, task.trim());
     // Clear the form for the next mandate
     setTask(""); setSubjects([]); setMerchantIds([]);
   }
