@@ -1,15 +1,15 @@
 import type { Catalog, EndpointMatch, HttpMethod } from '@apf/contracts';
+import type { Canonical, CanonicalResult } from './canonicalize.js';
 
-// Interface only: loader and parser/matcher are PR 3 and PR 4 respectively.
-// Inline the documented canonical result until Chunk 2 agrees a named shared export.
 export interface CatalogModule {
   loadCatalog(path: string): Catalog;
-  canonicalize(rawUrl: string):
-    | { ok: true; url: string; origin: string; path: string; query: [string, string][] }
-    | { ok: false; code: 'BAD_URL' | 'DUPLICATE_PARAM' };
-  matchEndpoint(
-    canonical: Extract<ReturnType<CatalogModule['canonicalize']>, { ok: true }>,
-    method: HttpMethod,
-    catalog: Catalog,
-  ): EndpointMatch;
+  canonicalize(rawUrl: string): CanonicalResult;
+  createCanonicalizer(catalog: Catalog): CatalogModule['canonicalize'];
+  matchEndpoint(canonical: Canonical, method: HttpMethod, catalog: Catalog): EndpointMatch;
 }
+
+export { loadCatalog, compiledEndpoints } from './load.js';
+export { canonicalize, createCanonicalizer } from './canonicalize.js';
+export type { Canonical, CanonicalResult } from './canonicalize.js';
+export { matchEndpoint, routeMatch } from './match.js';
+export type { VerificationRoute } from './match.js';

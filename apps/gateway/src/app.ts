@@ -1,10 +1,12 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { adminAuth } from './auth.js';
+import { adminAuth, agentAuth } from './auth.js';
 import type { AppEnv, Deps } from './deps.js';
 import { notFound } from './http.js';
 import { closeMandate, createMandate } from './routes/mandates.js';
 import { stream } from './routes/stream.js';
+import { createPipeline } from './pipeline/index.js';
+import { approvalRoute, decisionRoute, payRoute, paymentRoute, pollAuth } from './routes/pay.js';
 
 export type { AppEnv } from './deps.js';
 
@@ -13,6 +15,10 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 export function createApp(deps: Deps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  app.use(async (c, next) => {
+    c.set('catalogAdmission', deps.catalogAdmission);
+    await next();
+  });
   app.use(requestLog(deps));
   app.use(
     bodyLimit({
@@ -22,11 +28,20 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   );
 
   const admin = adminAuth(deps.config);
+  const pipeline =
+    deps.pipeline ??
+    (deps.payments && deps.judge
+      ? createPipeline({ ...deps, payments: deps.payments, judge: deps.judge })
+      : undefined);
 
   // Every route and who may call it (final_contracts.md section 2).
+  app.post('/pay', agentAuth(deps), payRoute(pipeline));
+  app.get('/decisions/:id', pollAuth(deps), decisionRoute(deps, pipeline));
+  app.get('/payments/:id', pollAuth(deps), paymentRoute(deps));
+  app.post('/approvals/:decision_id', admin, approvalRoute(pipeline));
   app.get('/health', (c) => c.json({ ok: true }));
   app.post('/mandates', admin, createMandate(deps));
-  app.post('/mandates/:id/close', admin, closeMandate(deps));
+  app.post('/mandates/:id/close', admin, closeMandate({ ...deps, pipeline }));
   app.get('/catalog', admin, (c) => c.json(deps.catalog));
   app.get('/stream', admin, stream(deps));
 

@@ -21,6 +21,7 @@ export const PRECONTACT_CODES = [
   'UNKNOWN_WITH_PARAMS',
   'DUPLICATE_PARAM',
   'BAD_URL',
+  'UNCATALOGED_ENDPOINT',
 ] as const satisfies readonly PrecontactCode[];
 
 export const QUOTE_CODES = [
@@ -40,6 +41,7 @@ export const TIER0_CODES = [
   'VELOCITY',
   'DUPLICATE',
   'NEW_PAYEE_LIMIT',
+  'INTERNAL_ERROR',
 ] as const satisfies readonly Tier0Code[];
 
 export const TIER1_CODES = [
@@ -123,6 +125,7 @@ export const REASON_ACTION: Readonly<Record<ReasonCode, ReasonAction>> = {
   UNKNOWN_WITH_PARAMS: 'escalate',
   DUPLICATE_PARAM: 'deny',
   BAD_URL: 'deny',
+  UNCATALOGED_ENDPOINT: 'escalate',
 
   QUOTE_FAILED: 'deny',
   NOT_402: 'deny',
@@ -138,6 +141,7 @@ export const REASON_ACTION: Readonly<Record<ReasonCode, ReasonAction>> = {
   VELOCITY: 'deny',
   DUPLICATE: 'deny',
   NEW_PAYEE_LIMIT: 'escalate',
+  INTERNAL_ERROR: 'deny',
 
   GRANT_HIT: 'approve',
   GRANT_NONE: 'log',

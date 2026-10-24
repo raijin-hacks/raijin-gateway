@@ -32,6 +32,11 @@ it('validates the complete frozen set through the reusable offline boundary', ()
   expect(validatePaperFixtures(mandates, cases).cases).toHaveLength(20);
 });
 
+it('rejects denominator drift before evaluation', () => {
+  const changed = cases.map(c => c.id === 'L1' ? { ...cases.find(c => c.id === 'L10')!, id: 'L1' } : c);
+  expect(() => validatePaperFixtures(mandates, changed)).toThrow('nine judge-eligible cases per label');
+});
+
 it('rejects corrupted fixtures before evaluation', () => {
   for (const change of [
     { ...cases[0], id: 'M1' },

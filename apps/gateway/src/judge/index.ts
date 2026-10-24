@@ -1,3 +1,4 @@
+import { buildInput } from './input.js';
 import { judgeInputSchema, judgeOutputSchema } from '@apf/contracts';
 import type { JudgeInput, JudgeModule, JudgeOutput } from '@apf/contracts';
 
@@ -14,17 +15,14 @@ export function validateOutput(value: unknown): JudgeOutput {
   return parsed.data;
 }
 
-// The adapter receives only sanitized input; live-context projection arrives in PR 5.
+// The adapter receives only sanitized input, never a live gateway context.
 export interface JudgeProvider {
   judge(input: JudgeInput): Promise<unknown>;
 }
 
 export function createInjectedJudge(provider: JudgeProvider, options: { preserveTypedErrors?: boolean } = {}): JudgeModule {
   return {
-    buildInput() {
-      // PR 5 owns context projection. Never pass a raw context through as a fallback.
-      throw new JudgeError('JUDGE_ERROR');
-    },
+    buildInput,
     async judge(input) {
       const parsed = judgeInputSchema.safeParse(input);
       if (!parsed.success || !parsed.data.payment.merchant.known || !parsed.data.payment.endpoint.known) {
@@ -58,3 +56,8 @@ export function createStubJudge(mode: 'stub-escalate' | 'stub-approve'): JudgeMo
 
 export { createJudge, validateJudgeConfig } from './real.js';
 export type { JudgeConfig, JudgeDependencies } from './real.js';
+
+export { buildInput } from './input.js';
+
+export { createGatewayAdmission, runGatewayJudge } from './gateway.js';
+export type { AdmittedRoute, AdmissionHold, GatewayJudgeResult } from './gateway.js';

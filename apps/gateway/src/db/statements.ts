@@ -27,9 +27,9 @@ export const EXTRA_SQL = {
   // Adds to the tenant's total for the day, unless that would pass tenants.daily_cap.
   tenantCommit: `INSERT INTO tenant_daily (tenant_id, day, committed)
 SELECT tenant_id, :day, :amount FROM mandates
- WHERE id = :mandate_id AND :amount <= (SELECT daily_cap FROM tenants WHERE id = mandates.tenant_id)
+ WHERE id = :mandate_id AND :amount + COALESCE((SELECT SUM(p.amount) FROM payments p JOIN mandates m ON m.id = p.mandate_id WHERE m.tenant_id = mandates.tenant_id AND p.day <> :day AND p.state IN ('RESERVED','SIGNED','SUBMITTED','UNKNOWN')), 0) <= (SELECT daily_cap FROM tenants WHERE id = mandates.tenant_id)
 ON CONFLICT (tenant_id, day) DO UPDATE SET committed = committed + excluded.committed
- WHERE committed + excluded.committed <= (SELECT daily_cap FROM tenants WHERE id = tenant_daily.tenant_id)`,
+ WHERE committed + excluded.committed + COALESCE((SELECT SUM(p.amount) FROM payments p JOIN mandates m ON m.id = p.mandate_id WHERE m.tenant_id = tenant_daily.tenant_id AND p.day <> :day AND p.state IN ('RESERVED','SIGNED','SUBMITTED','UNKNOWN')), 0) <= (SELECT daily_cap FROM tenants WHERE id = tenant_daily.tenant_id)`,
 
   // Gives a failed payment's amount back to the day it was reserved on.
   tenantRelease: `UPDATE tenant_daily SET committed = committed - :amount

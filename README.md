@@ -1,3 +1,5 @@
+guys please make sure to squash and merge
+
 # calhacks-13.0
 
 Agent Payment Firewall: a payment gateway that checks _why_ an AI agent is paying, against the task a human gave it, before anything is signed.
