@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createStubJudge } from '../../../apps/gateway/src/judge/index.js';
 import { createCategoryBaseline } from '../../api/baseline.js';
@@ -130,10 +132,17 @@ describe('frozen v1.3 protocol', () => {
   });
   it('runs the offline CLI without altering any historical report bytes', () => {
     const before = readFileSync('eval/REPORT.md');
-    execFileSync(process.execPath, ['--import', 'tsx', `${ROOT}/cli.ts`], { stdio: 'pipe' });
+    const committed = readFileSync(`${ROOT}/results/offline.json`);
+    const committedMd = readFileSync(`${ROOT}/results/offline.md`);
+    const outDir = mkdtempSync(join(tmpdir(), 'v13-offline-'));
+    execFileSync(process.execPath, ['--import', 'tsx', `${ROOT}/cli.ts`, '--out-dir', outDir], {
+      stdio: 'pipe',
+    });
     expect(readFileSync('eval/REPORT.md')).toEqual(before);
+    expect(readFileSync(`${ROOT}/results/offline.json`)).toEqual(committed);
+    expect(readFileSync(`${ROOT}/results/offline.md`)).toEqual(committedMd);
     expect(sha256(before)).toBe(loadFrozen().historical_report_sha256);
-    const report = JSON.parse(readFileSync(`${ROOT}/results/offline.json`, 'utf8'));
+    const report = JSON.parse(readFileSync(`${outDir}/offline.json`, 'utf8'));
     expect(report.live_status).toBe('unmeasured');
     expect(report.runs).toHaveLength(2);
     for (const run of report.runs) expect(run.boundary_failures).toEqual([]);
