@@ -1,6 +1,6 @@
 import type { JudgeModule } from '@apf/contracts';
-import { createInjectedJudge, JudgeError } from './index';
-import { OUTPUT_SCHEMA, SYSTEM_PROMPT } from './prompt';
+import { createInjectedJudge, JudgeError } from './index.js';
+import { OUTPUT_SCHEMA, SYSTEM_PROMPT } from './prompt.js';
 
 // Explicit capability allowlist: aliases and unverified settings fail startup.
 export const SUPPORTED_MODELS = ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'] as const;

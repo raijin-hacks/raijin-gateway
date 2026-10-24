@@ -56,5 +56,5 @@ export function createStubJudge(mode: 'stub-escalate' | 'stub-approve'): JudgeMo
   });
 }
 
-export { createJudge, validateJudgeConfig } from './real';
-export type { JudgeConfig, JudgeDependencies } from './real';
+export { createJudge, validateJudgeConfig } from './real.js';
+export type { JudgeConfig, JudgeDependencies } from './real.js';

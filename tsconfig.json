@@ -1,17 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "noEmit": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  },
-  "include": [
-    "apps/**/*.ts",
-    "packages/**/*.ts",
-    "eval/**/*.ts"
-  ]
+  "files": [],
+  "references": [{ "path": "packages/contracts" }, { "path": "apps/gateway" }]
 }
