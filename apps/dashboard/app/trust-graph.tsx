@@ -67,7 +67,7 @@ export default function TrustGraph() {
       ) : (
         <div className="h-72 rounded border border-gray-700 p-2">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart margin={{ top: 8, right: 72, bottom: 0, left: 0 }}>
+            <LineChart margin={{ top: 8, right: 104, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={GRID} strokeDasharray="2 4" vertical={false} />
               <XAxis
                 dataKey="at"
@@ -133,7 +133,12 @@ export default function TrustGraph() {
                 labelFormatter={(t) => new Date(Number(t)).toLocaleTimeString()}
                 formatter={(value, name) => [value, name]}
               />
-              {series.length >= 2 && <Legend wrapperStyle={{ fontSize: 12, color: INK }} />}
+              {series.length >= 2 && (
+                <Legend
+                  wrapperStyle={{ fontSize: 12, color: INK }}
+                  formatter={(v) => shortId(String(v))}
+                />
+              )}
 
               {series.map((s) => (
                 <Line
@@ -175,7 +180,14 @@ function EndLabel(props: {
   if (props.index !== props.count - 1) return null;
   return (
     <text x={Number(props.x) + 8} y={Number(props.y)} dy={4} fill={INK} fontSize={11}>
-      {props.name} · {String(props.value)}
+      {shortId(props.name)} · {String(props.value)}
     </text>
   );
+}
+
+// Real session ids are 30-character ULIDs; on the chart, keep the prefix and the last 4 characters.
+// The tooltip still shows the full id.
+function shortId(id: string): string {
+  const cut = id.indexOf('_') + 1;
+  return id.length > cut + 8 ? `${id.slice(0, cut)}…${id.slice(-4)}` : id;
 }

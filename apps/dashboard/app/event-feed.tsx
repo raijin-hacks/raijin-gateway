@@ -21,13 +21,19 @@ export default function EventFeed() {
   const [rows, setRows] = useState<Row[]>([]);
   const [openKey, setOpenKey] = useState<number | null>(null);
   const nextKey = useRef(0);
+  // decision_id + stage + outcome of every row shown; the gateway can publish the same decision twice
+  const shown = useRef(new Set<string>());
 
   useEffect(
     () =>
       subscribe((events) => {
         const incoming: Row[] = [];
         for (const event of events) {
-          if (event.type === 'decision') incoming.unshift({ key: nextKey.current++, event }); // newest first
+          if (event.type !== 'decision') continue;
+          const id = `${event.decision_id}|${event.stage}|${event.outcome}`;
+          if (shown.current.has(id)) continue;
+          shown.current.add(id);
+          incoming.unshift({ key: nextKey.current++, event }); // newest first
         }
         if (incoming.length > 0) setRows((prev) => [...incoming, ...prev].slice(0, MAX_ROWS));
       }),
