@@ -115,19 +115,39 @@ function withLap(event: StreamEvent, lap: number): StreamEvent {
 }
 
 // Starts sending fake events to `onEvent`. Returns a function that stops it.
-export function startMockStream(onEvent: (event: StreamEvent) => void): () => void {
+// `eventsPerSecond` sends at a fixed rate instead, for load checks (D-flood: 50 per second).
+export function startMockStream(
+  onEvent: (event: StreamEvent) => void,
+  eventsPerSecond?: number,
+): () => void {
   let index = 0;
   let lap = 0;
   let timer: ReturnType<typeof setTimeout>;
 
-  function sendNext() {
+  function send() {
     onEvent(withLap(SCRIPT[index](Date.now()), lap));
     index = (index + 1) % SCRIPT.length; // loop back to the start
     if (index === 0) lap++;
-    const delay = 1000 + Math.random() * 1000; // 1 to 2 seconds
-    timer = setTimeout(sendNext, delay);
   }
 
+  if (eventsPerSecond) {
+    // Timers are coarse (about 15 ms on Windows), so each tick sends every event that's due by
+    // now. The average rate is exact even when single ticks are late.
+    const started = Date.now();
+    let sent = 0;
+    const tick = () => {
+      const due = Math.floor(((Date.now() - started) * eventsPerSecond) / 1000);
+      for (; sent < due; sent++) send();
+      timer = setTimeout(tick, 10);
+    };
+    timer = setTimeout(tick, 10);
+    return () => clearTimeout(timer);
+  }
+
+  function sendNext() {
+    send();
+    timer = setTimeout(sendNext, 1000 + Math.random() * 1000); // 1 to 2 seconds
+  }
   timer = setTimeout(sendNext, 1000);
   return () => clearTimeout(timer);
 }
