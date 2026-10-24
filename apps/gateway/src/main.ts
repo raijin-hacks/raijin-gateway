@@ -6,14 +6,14 @@ import { loadConfig } from './config.js';
 import { openDb } from './db/client.js';
 import { seedDatabase } from './db/seed.js';
 import { createLogger, stdoutSink } from './log.js';
-import { loadCatalog } from './stubs/catalog-stub.js';
+import { loadCatalog } from './catalog/load.js';
 
 const config = loadConfig(process.env);
 const log = createLogger(stdoutSink, { clock: systemClock, secrets: [config.adminToken] });
 
 // The catalog is loaded into the database at every start (final_contracts.md section 1).
-const db = openDb(config.databasePath);
 const catalog = loadCatalog(config.catalogPath);
+const db = openDb(config.databasePath);
 seedDatabase(db, catalog, systemClock);
 
 const bus = createEventBus(log);

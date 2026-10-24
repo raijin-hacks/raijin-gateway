@@ -66,6 +66,10 @@ export function validatePaperFixtures(rawMandates: unknown, rawCases: unknown) {
       cases.filter(c => c.kind === 'legitimate').length !== 10) {
     throw new Error('Paper set requires unique IDs and ten cases per label');
   }
+  if (['legitimate', 'off_task'].some(kind =>
+    cases.filter(c => c.kind === kind && c.route === 'judge').length !== 9)) {
+    throw new Error('Paper checkpoint requires nine judge-eligible cases per label');
+  }
   for (const fixture of cases) {
     if (fixture.route !== 'judge') continue;
     const expected = mandates[fixture.mandate];

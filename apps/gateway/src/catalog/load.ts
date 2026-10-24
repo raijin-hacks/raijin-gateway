@@ -31,7 +31,7 @@ function compile(endpoint: Endpoint): TemplateSegment[] {
         const name = variable[1]!;
         if (names.has(name)) invalid(`repeated path parameter in ${endpoint.id}`);
         names.add(name);
-        const spec = endpoint.params[name];
+        const spec = Object.hasOwn(endpoint.params, name) ? endpoint.params[name] : undefined;
         if (!spec || spec.in !== 'path') invalid(`missing path parameter in ${endpoint.id}`);
         segments.push({ parameter: name });
       } else {

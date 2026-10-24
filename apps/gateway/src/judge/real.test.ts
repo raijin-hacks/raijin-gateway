@@ -49,8 +49,23 @@ describe('real judge boundary', () => {
     await expect(createJudge(config, { fetch: transport }).judge(input)).rejects.toThrow('JUDGE_ERROR');
     expect(transport).toHaveBeenCalledTimes(1);
   });
+  it.each([false, true])('maps a rejecting body stream to a redacted transport error (partial=%s)', async partial => {
+    const transport = vi.fn<typeof fetch>(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (partial) controller.enqueue(new TextEncoder().encode('{"type":"message"'));
+      },
+      pull(controller) { controller.error(new Error('SECRET_STREAM_FAILURE')); },
+    })));
+    await expect(createJudge(config, { fetch: transport }).judge(input)).rejects.toMatchObject({
+      code: 'JUDGE_ERROR', message: 'JUDGE_ERROR',
+    });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
   it('rejects oversized and malformed envelopes', async () => {
     for (const body of ['x'.repeat(MAX_RESPONSE_BYTES + 1), '{bad', 'null']) {
+      await expect(createJudge(config, { fetch: async () => new Response(body) }).judge(input)).rejects.toMatchObject({ code: 'JUDGE_INVALID_OUTPUT' });
+    }
+    for (const body of [null, new Uint8Array([0xff])]) {
       await expect(createJudge(config, { fetch: async () => new Response(body) }).judge(input)).rejects.toMatchObject({ code: 'JUDGE_INVALID_OUTPUT' });
     }
   });
