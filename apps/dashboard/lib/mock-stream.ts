@@ -26,14 +26,24 @@ const SCRIPT: EventTemplate[] = [
   (now) => ({ type: "trust", session_id: "ses_001", agent_id: "agt_research", session_trust: 40, agent_trust: 64, cause: "JUDGE_OFF_TASK", at: now }),
 ];
 
+// Each lap of the script gets fresh ids, like a real gateway would send.
+function withLap(event: StreamEvent, lap: number): StreamEvent {
+  if (lap === 0) return event;
+  if ("decision_id" in event) return { ...event, decision_id: `${event.decision_id}_${lap}` };
+  if (event.type === "payment") return { ...event, payment_id: `${event.payment_id}_${lap}` };
+  return event;
+}
+
 // Starts sending fake events to `onEvent`. Returns a function that stops it.
 export function startMockStream(onEvent: (event: StreamEvent) => void): () => void {
   let index = 0;
+  let lap = 0;
   let timer: ReturnType<typeof setTimeout>;
 
   function sendNext() {
-    onEvent(SCRIPT[index](Date.now()));
+    onEvent(withLap(SCRIPT[index](Date.now()), lap));
     index = (index + 1) % SCRIPT.length; // loop back to the start
+    if (index === 0) lap++;
     const delay = 1000 + Math.random() * 1000; // 1 to 2 seconds
     timer = setTimeout(sendNext, delay);
   }
