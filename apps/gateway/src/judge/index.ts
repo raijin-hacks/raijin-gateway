@@ -61,6 +61,3 @@ export { buildInput } from './input.js';
 
 export { createGatewayAdmission, runGatewayJudge } from './gateway.js';
 export type { AdmittedRoute, AdmissionHold, GatewayJudgeResult } from './gateway.js';
-
-export { buildExplanationInput, createPlanDrafter, createStubPlanDrafter, createEscalationExplainer, createStubEscalationExplainer, draftInputSchema, draftOutputSchema, mandateDraftSchema, explanationInputSchema } from './advisory.js';
-export type { DraftInput, DraftOutput, ExplanationInput, Explanation, PlanDrafter, EscalationExplainer } from './advisory.js';
