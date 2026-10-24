@@ -50,11 +50,11 @@ jobs:
             process.exit(0);
           }
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          if (pkg.packageManager && !pkg.packageManager.startsWith('npm@')) {
-            throw new Error('CI currently assumes npm. Update the install/cache/run steps for the selected package manager.');
+          if (!pkg.packageManager?.startsWith('pnpm@')) {
+            throw new Error('Set "packageManager": "pnpm@<exact version>" in package.json; CI installs that pnpm version.');
           }
-          if (!fs.existsSync('package-lock.json')) {
-            throw new Error('Commit a root package-lock.json for reproducible npm ci installs.');
+          if (!fs.existsSync('pnpm-lock.yaml')) {
+            throw new Error('Commit a root pnpm-lock.yaml for reproducible frozen-lockfile installs.');
           }
           const required = ['lint', 'format:check', 'typecheck', 'test', 'build'];
           const missing = required.filter(name => typeof pkg.scripts?.[name] !== 'string' || !pkg.scripts[name].trim());
@@ -72,23 +72,25 @@ jobs:
       CI: true
     steps:
       - uses: actions/checkout@v4
+      # Reads the pnpm version from package.json "packageManager".
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: package-lock.json
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
       - name: Check formatting
-        run: npm run format:check
+        run: pnpm run format:check
       - name: Check types
-        run: npm run typecheck
+        run: pnpm run typecheck
       - name: Test
-        run: npm test
+        run: pnpm run test
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
 # CD PLACEHOLDER: Design.md specifies a local demo and only tentative Azure hosting.
 # Add deployment after a host, build artifact, environment, and credentials are defined.

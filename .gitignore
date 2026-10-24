@@ -1,5 +1,23 @@
+# Python
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Secrets: copy .env.example to .env
+.env
+.env.*
+!.env.example
+
+# SQLite (DATABASE_PATH)
+*.db
+*.db-wal
+*.db-shm
+
 .DS_Store

@@ -1,0 +1,10 @@
+# Docs, workflows and the Python suite keep their authors' formatting.
+*.md
+.github/
+tests/
+
+pnpm-lock.yaml
+dist/
+coverage/
+.venv/
+*.db

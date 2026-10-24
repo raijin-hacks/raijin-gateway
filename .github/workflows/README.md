@@ -7,30 +7,23 @@ The unconditional `Python tests` job sets up Python 3.12, caches pip downloads,
 installs `requirements-test.txt`, and runs `python -m pytest`. Local venv setup
 is documented in `tests/README.md`.
 
-There is no Node application manifest yet. The inspection job reports this in
-the Actions summary; Node application checks are explicitly skipped until a root
-`package.json` exists. Python tests run independently of that inspection.
+## Node application checks
 
-## Activating application checks
+The repository is a pnpm workspace (`final_contracts.md` section 0). The
+inspection job checks that the root `package.json` names an exact pnpm version
+in `packageManager`, that `pnpm-lock.yaml` is committed, and that these scripts
+exist: `lint`, `format:check`, `typecheck`, `test`, and `build`. Missing scripts
+fail CI rather than silently skipping checks.
 
-The design proposes TypeScript/Node and Next.js. This scaffold assumes Node 22
-and npm; these are CI defaults, not existing repository requirements. When adding
-the application:
+The `checks` job then installs that pnpm version with `pnpm/action-setup` (it
+reads `packageManager`), sets up the Node version in `.nvmrc` with the pnpm store
+cache keyed by the lockfile, installs with `pnpm install --frozen-lockfile`, and
+runs each check in order. The root scripts cover every workspace package.
 
-1. Commit a root `package.json` and `package-lock.json`. If using another package
-   manager or a different runtime version, update the workflow accordingly.
-2. Define real, non-interactive scripts: `lint`, `format:check`, `typecheck`,
-   `test`, and `build`. Formatting must check without writing; tests must run once
-   without watch mode. For a workspace, root scripts must cover all packages.
-3. The workflow validates these prerequisites, sets up Node with the npm download
-   cache keyed by the lockfile, installs with `npm ci`, and runs each check in order.
-   Missing scripts fail CI rather than silently skipping checks.
-
-No application scripts or dependencies have been invented for this docs-only
-repository. Once tests exist, include the design's canary, parallel-reservation,
-and settlement/crash reliability cases in `npm test`. Keep CI deterministic with
-mocked external services and no wallet or model credentials. If the implementation
-does not use TypeScript, replace the type-check step with the applicable check.
+Keep CI deterministic: mocked external services, no wallet or model credentials.
+Include the design's canary, parallel-reservation, and settlement/crash
+reliability cases in `pnpm test` as they are written (see `TEST-HARNESS-PLAN.md`).
+The Python tests run independently of the Node checks.
 
 ## CD PLACEHOLDER
 
