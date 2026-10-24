@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "merchants": [
+    {
+      "id": "mer_pricing",
+      "name": "PriceScope",
+      "origin": "http://localhost:4101",
+      "payee": "0x1111111111111111111111111111111111111111",
+      "category": "market data",
+      "description": "Product pricing for named companies",
+      "endpoints": [
+        {
+          "id": "end_pricing_get",
+          "method": "GET",
+          "path": "/v1/pricing/{company}",
+          "category": "pricing lookup",
+          "description": "Current list prices for one company",
+          "params": {
+            "company": { "in": "path", "kind": "subject" },
+            "period": { "in": "query", "kind": "option", "type": "enum", "values": ["30d", "90d"] }
+          }
+        },
+        {
+          "id": "end_pricing_export",
+          "method": "POST",
+          "path": "/v1/pricing/export",
+          "category": "bulk export",
+          "description": "Full historical pricing dataset for all tracked companies",
+          "params": {}
+        }
+      ]
+    },
+    {
+      "id": "mer_weather",
+      "name": "SkyData",
+      "origin": "http://localhost:4102",
+      "payee": "0x2222222222222222222222222222222222222222",
+      "category": "weather",
+      "description": "Weather forecasts by city",
+      "endpoints": [
+        {
+          "id": "end_weather_forecast",
+          "method": "GET",
+          "path": "/v1/forecast",
+          "category": "weather forecast",
+          "description": "7-day forecast for one city",
+          "params": {
+            "city": { "in": "query", "kind": "subject" },
+            "units": {
+              "in": "query",
+              "kind": "option",
+              "type": "enum",
+              "values": ["metric", "imperial"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "mer_news",
+      "name": "NewsWire",
+      "origin": "http://localhost:4103",
+      "payee": "0x3333333333333333333333333333333333333333",
+      "category": "news",
+      "description": "News headlines by topic",
+      "endpoints": [
+        {
+          "id": "end_news_headlines",
+          "method": "GET",
+          "path": "/v1/headlines",
+          "category": "news headlines",
+          "description": "Latest headlines for one topic",
+          "params": {
+            "topic": { "in": "query", "kind": "subject" }
+          }
+        }
+      ]
+    }
+  ],
+  "standing_grants": [
+    {
+      "role": "research",
+      "endpoint_id": "end_weather_forecast",
+      "max_per_call": 20000,
+      "daily_total": 500000
+    }
+  ]
+}
