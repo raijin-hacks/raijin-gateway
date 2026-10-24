@@ -1,4 +1,6 @@
-# Agent Payment Firewall: Contracts v1
+# Agent Payment Firewall: Contracts v1.1
+
+v1.1: added `GET /catalog`, `PaymentStore`, `EndpointMatch`, `JudgeContext`; grant clamping moved to the gateway; `pay()` never marks a payment failed.
 
 The single source of truth for all four people. If code and this file disagree, this file wins until the team agrees to change it. Paste the relevant sections into every coding-agent prompt.
 
@@ -276,6 +278,7 @@ Responses, always HTTP 200 for a decision; 400 for malformed input; 401 for a ba
 | `GET /payments/:id` | Agent (own mandate) or admin | none | `{ payment_id, state, amount, payee, tx_hash }` |
 | `POST /approvals/:decision_id` | Admin | `{ outcome: "approved" \| "rejected", note: string, issue_grant: boolean }` | `{ ok: true }` |
 | `GET /stream` | Dashboard (admin) | none | Server-sent events, each `StreamEvent` (section 5) |
+| `GET /catalog` | Admin | none | `Catalog` (for the dashboard's merchant checkboxes) |
 | `GET /health` | Anyone | none | `{ ok: true }` |
 
 ### Reason codes
@@ -451,7 +454,7 @@ The judge returns only this JSON. It does **not** name a payee, endpoint, method
 }
 ```
 
-Validation in code (any failure means deny with `JUDGE_INVALID_OUTPUT`):
+Validation in code. Shape checks are the judge module's job (any failure means deny with `JUDGE_INVALID_OUTPUT`); the clamps below are the gateway's job when it creates the grant, because only the gateway has the caps and reference prices:
 
 - `decision` in `approve`, `deny`, `escalate`.
 - `reasons` non-empty, all from the judge reason codes.
@@ -544,6 +547,28 @@ export interface PaymentsModule {
   reconcile(paymentId: string): Promise<'SETTLED' | 'FAILED' | 'UNKNOWN'>;
 }
 
+// Implemented by the gateway (owner B) over the payments table; used by the payments module (owner A).
+// Every method is a conditional update on the current state and returns false if it changed nothing.
+// pay() never calls fail(): a merchant's rejection proves nothing while a signed authorization is still valid.
+export interface PaymentStore {
+  get(paymentId: string): Promise<{ id: string; mandate_id: string; amount: Money; payee: Address; state: PaymentState;
+    nonce: string | null; valid_before: EpochMs | null; authorization_json: string | null } | null>;
+  markSigned(paymentId: string, f: { nonce: string; validBefore: EpochMs; authorizationJson: string }): Promise<boolean>; // RESERVED -> SIGNED
+  markSubmitted(paymentId: string): Promise<boolean>;                    // SIGNED -> SUBMITTED (before sending)
+  markUnknown(paymentId: string): Promise<boolean>;                      // SUBMITTED -> UNKNOWN
+  settle(paymentId: string, txHash: string): Promise<boolean>;           // SIGNED|SUBMITTED|UNKNOWN -> SETTLED, moves reserved to spent
+  fail(paymentId: string): Promise<boolean>;                             // RESERVED|SIGNED|SUBMITTED|UNKNOWN -> FAILED, releases reserved
+  listUnresolved(): Promise<string[]>;                                   // ids in SIGNED, SUBMITTED, UNKNOWN
+}
+
+// ---------- Catalog matching (owner C) ----------
+export type EndpointMatch =
+  | { kind: 'known'; merchant: CatalogMerchant; endpoint: CatalogEndpoint;
+      params: { name: string; kind: 'subject' | 'option' | 'forbidden' | 'undeclared'; value: string;
+                violation: null | 'PARAM_NOT_IN_SCHEMA' }[] }
+  | { kind: 'unknown'; origin: string; hasParams: boolean;
+      urlShape: { path_segments: number[]; query_params: { type: 'string' | 'int' | 'other'; length: number }[] } };
+
 // ---------- Judge module (owner C) ----------
 export interface JudgeParam {
   name: string;
@@ -572,9 +597,19 @@ export interface JudgeOutput {
   injection_suspected: boolean;
   grant?: { max_per_call: Money; max_total: Money; ttl_ms: number };
 }
+// Built by the gateway (owner B), read only by buildInput (owner C). Every field here is trusted or non-text.
+export interface JudgeContext {
+  mandate: { task: string; subjects: string[]; allowed_merchant_ids: string[]; budget_remaining: Money; expires_in_ms: number };
+  role_policy: string;
+  price: Money;
+  purpose: PurposeCode;
+  method: HttpMethod;
+  match: EndpointMatch;
+  payee_facts: { first_seen: boolean; prior_calls: number; recent_prices: Money[] };
+}
 export interface JudgeModule {
-  buildInput(ctx: unknown): JudgeInput;   // ctx is the gateway's internal request context
-  judge(input: JudgeInput): Promise<JudgeOutput>;   // already validated and clamped; errors -> JUDGE_ERROR
+  buildInput(ctx: JudgeContext): JudgeInput;
+  judge(input: JudgeInput): Promise<JudgeOutput>;   // shape-validated; throws JudgeError('JUDGE_ERROR' | 'JUDGE_INVALID_OUTPUT'). Clamping is the gateway's job.
 }
 
 // ---------- Dashboard stream ----------
