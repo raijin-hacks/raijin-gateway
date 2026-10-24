@@ -14,7 +14,10 @@ if (!key) {
 
 const payer = privateKeyToAccount(key).address;
 const usdc = (process.env.USDC_ADDRESS || DEFAULT_USDC) as `0x${string}`;
-const client = createPublicClient({ chain: baseSepolia, transport: http(process.env.BASE_SEPOLIA_RPC_URL || undefined) });
+const client = createPublicClient({
+  chain: baseSepolia,
+  transport: http(process.env.BASE_SEPOLIA_RPC_URL || undefined),
+});
 
 const [usdcBalance, decimals, symbol, ethBalance] = await Promise.all([
   client.readContract({ address: usdc, abi: erc20Abi, functionName: 'balanceOf', args: [payer] }),
@@ -25,5 +28,7 @@ const [usdcBalance, decimals, symbol, ethBalance] = await Promise.all([
 
 console.log(`payer   ${payer.toLowerCase()}`);
 console.log(`network eip155:${baseSepolia.id}`);
-console.log(`${symbol}    ${usdcBalance} atomic (${formatUnits(usdcBalance, decimals)} ${symbol}) at ${usdc}`);
+console.log(
+  `${symbol}    ${usdcBalance} atomic (${formatUnits(usdcBalance, decimals)} ${symbol}) at ${usdc}`,
+);
 console.log(`ETH     ${formatEther(ethBalance)}`);

@@ -1,13 +1,14 @@
 // Payments module (owner A): what Chunk 2's pipeline calls.
 import { privateKeyToAccount } from 'viem/accounts';
-import { createPay } from './pay.ts';
-import { getQuote } from './quote.ts';
-import { createReconcile } from './reconcile.ts';
-import type { PaymentsModule, PaymentStore } from './types.ts';
+import { systemClock, type Clock } from '../clock.js';
+import { createPay } from './pay.js';
+import { getQuote } from './quote.js';
+import { createReconcile } from './reconcile.js';
+import type { PaymentsModule, PaymentStore } from '@apf/contracts';
 
-export { getQuote, QuoteError } from './quote.ts';
-export { SettlementNotRecordedError } from './pay.ts';
-export { startReconciler } from './reconcile.ts';
+export { getQuote, QuoteError } from './quote.js';
+export { SettlementNotRecordedError } from './pay.js';
+export { startReconciler } from './reconcile.js';
 
 export interface PaymentsConfig {
   walletPrivateKey: `0x${string}`; // testnet only
@@ -16,14 +17,20 @@ export interface PaymentsConfig {
   onStuck?: (paymentId: string, reason: string) => void;
 }
 
-export function createPayments(deps: { store: PaymentStore; config: PaymentsConfig }): PaymentsModule {
+export function createPayments(deps: {
+  store: PaymentStore;
+  config: PaymentsConfig;
+  clock?: Clock;
+}): PaymentsModule {
+  const clock = deps.clock ?? systemClock;
   return {
     getQuote,
-    pay: createPay(deps.store, deps.config.walletPrivateKey),
+    pay: createPay(deps.store, deps.config.walletPrivateKey, clock),
     reconcile: createReconcile(deps.store, {
       rpcUrl: deps.config.rpcUrl,
       wallet: privateKeyToAccount(deps.config.walletPrivateKey).address,
       onStuck: deps.config.onStuck,
+      clock,
     }),
   };
 }

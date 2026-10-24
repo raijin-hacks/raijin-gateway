@@ -4,8 +4,9 @@
 import { x402Client, x402HTTPClient } from '@x402/core/client';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { privateKeyToAccount } from 'viem/accounts';
-import { NETWORK, usdcAddress } from './quote.ts';
-import type { PaymentsModule, PaymentStore, Quote } from './types.ts';
+import { NETWORK, usdcAddress } from './quote.js';
+import type { Clock } from '../clock.js';
+import type { PaymentsModule, PaymentStore, Quote } from '@apf/contracts';
 
 const PAID_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -17,7 +18,9 @@ export class SettlementNotRecordedError extends Error {
   txHash: string;
   state: string;
   constructor(paymentId: string, txHash: string, state: string) {
-    super(`payment ${paymentId} settled on-chain (tx ${txHash}) but the store refused to record it: row is ${state}`);
+    super(
+      `payment ${paymentId} settled on-chain (tx ${txHash}) but the store refused to record it: row is ${state}`,
+    );
     this.name = 'SettlementNotRecordedError';
     this.paymentId = paymentId;
     this.txHash = txHash;
@@ -25,8 +28,11 @@ export class SettlementNotRecordedError extends Error {
   }
 }
 
-export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) {
-  const client = new x402Client().register('eip155:*', new ExactEvmScheme(privateKeyToAccount(walletPrivateKey)));
+export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`, clock: Clock) {
+  const client = new x402Client().register(
+    'eip155:*',
+    new ExactEvmScheme(privateKeyToAccount(walletPrivateKey)),
+  );
   const http = new x402HTTPClient(client);
 
   // One paid request per payment at a time in this process: a concurrent call joins the one in flight instead of
@@ -37,11 +43,18 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) 
   return function pay(paymentId: string, quote: Quote): Promise<PayResult> {
     const running = inFlight.get(paymentId);
     if (running) {
-      const same = running.quote.url === quote.url && running.quote.method === quote.method &&
-        running.quote.amount === quote.amount && running.quote.payee.toLowerCase() === quote.payee.toLowerCase();
+      const same =
+        running.quote.url === quote.url &&
+        running.quote.method === quote.method &&
+        running.quote.amount === quote.amount &&
+        running.quote.payee.toLowerCase() === quote.payee.toLowerCase();
       return same
         ? running.result
-        : Promise.reject(new Error(`payment ${paymentId} is already being paid with a different quote; nothing was sent`));
+        : Promise.reject(
+            new Error(
+              `payment ${paymentId} is already being paid with a different quote; nothing was sent`,
+            ),
+          );
     }
     const result = payOnce(paymentId, quote).finally(() => inFlight.delete(paymentId));
     inFlight.set(paymentId, { quote, result });
@@ -67,7 +80,13 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) 
     if (row.state === 'RESERVED') {
       authorizationJson = await sign(quote, row);
       const { nonce, validBefore } = JSON.parse(authorizationJson).payload.authorization;
-      if (!(await store.markSigned(paymentId, { nonce, validBefore: Number(validBefore) * 1000, authorizationJson }))) {
+      if (
+        !(await store.markSigned(paymentId, {
+          nonce,
+          validBefore: Number(validBefore) * 1000,
+          authorizationJson,
+        }))
+      ) {
         throw new Error(`payment ${paymentId} changed state while signing; nothing was sent`);
       }
     } else if (!authorizationJson) {
@@ -87,19 +106,26 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) 
     const paymentPayload = JSON.parse(authorizationJson);
     const { value, to } = paymentPayload.payload?.authorization ?? {};
     if (value !== String(row.amount) || String(to).toLowerCase() !== row.payee.toLowerCase()) {
-      throw new Error(`stored authorization for ${paymentId} does not match its reservation; refusing to send`);
+      throw new Error(
+        `stored authorization for ${paymentId} does not match its reservation; refusing to send`,
+      );
     }
     const paymentHeaders = http.encodePaymentSignatureHeader(paymentPayload);
 
     // Act on the current row, not the snapshot read above: the reconciler may have resolved it since.
     const current = await store.get(paymentId);
     if (current?.state === 'FAILED') {
-      return { state: 'FAILED', reason: 'resolved as FAILED by the reconciler before sending; not sent' };
+      return {
+        state: 'FAILED',
+        reason: 'resolved as FAILED by the reconciler before sending; not sent',
+      };
     }
     if (current?.state !== 'SUBMITTED' && current?.state !== 'UNKNOWN') return { state: 'UNKNOWN' }; // e.g. SETTLED elsewhere
     // Past validBefore the token rejects the authorization, so a resend can't settle. Leave it to the reconciler.
-    if (current.valid_before !== null && Date.now() >= current.valid_before) {
-      console.warn(`[payments] ${paymentId}: authorization expired, not resending; the reconciler will resolve it`);
+    if (current.valid_before !== null && clock.now() >= current.valid_before) {
+      console.warn(
+        `[payments] ${paymentId}: authorization expired, not resending; the reconciler will resolve it`,
+      );
       return { state: 'UNKNOWN' };
     }
 
@@ -135,18 +161,27 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) 
       return {
         state: 'SETTLED',
         txHash,
-        response: { status_code: res.status, content_type: res.headers.get('content-type') ?? '', body },
+        response: {
+          status_code: res.status,
+          content_type: res.headers.get('content-type') ?? '',
+          body,
+        },
       };
     }
 
-    console.warn(`[payments] ${paymentId} UNKNOWN: merchant answered ${res.status}${txHash ? '' : ' without a settlement tx hash'}`);
+    console.warn(
+      `[payments] ${paymentId} UNKNOWN: merchant answered ${res.status}${txHash ? '' : ' without a settlement tx hash'}`,
+    );
     return markUnknown(paymentId);
   }
 
   // No proof of settlement. Record UNKNOWN; if the row was resolved meanwhile, report what the store says instead.
   async function markUnknown(paymentId: string): Promise<PayResult> {
     if (!(await store.markUnknown(paymentId)) && (await store.get(paymentId))?.state === 'FAILED') {
-      return { state: 'FAILED', reason: 'resolved as FAILED by the reconciler while the request was in flight' };
+      return {
+        state: 'FAILED',
+        reason: 'resolved as FAILED by the reconciler while the request was in flight',
+      };
     }
     return { state: 'UNKNOWN' };
   }
@@ -162,7 +197,9 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) 
       raw.amount !== String(quote.amount) ||
       String(raw.payTo).toLowerCase() !== quote.payee.toLowerCase()
     ) {
-      throw new Error('quote.raw is not an exact Base Sepolia USDC payment of the approved amount to the approved payee; refusing to sign');
+      throw new Error(
+        'quote.raw is not an exact Base Sepolia USDC payment of the approved amount to the approved payee; refusing to sign',
+      );
     }
 
     const payload = await client.createPaymentPayload({
@@ -172,9 +209,15 @@ export function createPay(store: PaymentStore, walletPrivateKey: `0x${string}`) 
     } as Parameters<typeof client.createPaymentPayload>[0]);
 
     // Check what was actually signed against the reservation itself, before it is stored.
-    const authorization = (payload.payload as { authorization?: { value?: string; to?: string } }).authorization;
-    if (authorization?.value !== String(reserved.amount) || authorization.to?.toLowerCase() !== reserved.payee.toLowerCase()) {
-      throw new Error('signed authorization does not match the reservation; refusing to store or send');
+    const authorization = (payload.payload as { authorization?: { value?: string; to?: string } })
+      .authorization;
+    if (
+      authorization?.value !== String(reserved.amount) ||
+      authorization.to?.toLowerCase() !== reserved.payee.toLowerCase()
+    ) {
+      throw new Error(
+        'signed authorization does not match the reservation; refusing to store or send',
+      );
     }
     return JSON.stringify(payload);
   }

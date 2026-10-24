@@ -9,7 +9,8 @@ const NETWORK = 'eip155:84532';
 const PORT = Number(process.env.PRICESCOPE_PORT || 4101);
 const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://x402.org/facilitator';
 // Circle's test USDC on Base Sepolia. name/version are its EIP-712 domain, needed to sign EIP-3009.
-const USDC = (process.env.USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as `0x${string}`;
+const USDC = (process.env.USDC_ADDRESS ||
+  '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as `0x${string}`;
 const PRICE_ATOMIC = '10000'; // 0.01 USDC
 
 const payees = JSON.parse(readFileSync(new URL('../payees.json', import.meta.url), 'utf8'));
@@ -56,5 +57,7 @@ app.get('/v1/pricing/:company', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`PriceScope on http://localhost:${PORT} (payTo ${payTo}, facilitator ${FACILITATOR_URL})`);
+  console.log(
+    `PriceScope on http://localhost:${PORT} (payTo ${payTo}, facilitator ${FACILITATOR_URL})`,
+  );
 });

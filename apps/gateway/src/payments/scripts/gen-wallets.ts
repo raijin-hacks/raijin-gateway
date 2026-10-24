@@ -42,7 +42,8 @@ for (const w of wallets) {
       status = 'new';
     }
   }
-  addresses[w.name] = privateKeyToAccount(key).address.toLowerCase();
+  // Either an existing valid key or one generated above.
+  addresses[w.name] = privateKeyToAccount(key as `0x${string}`).address.toLowerCase();
   console.log(`${w.name.padEnd(10)} ${addresses[w.name]}  (${status})`);
 }
 

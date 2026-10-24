@@ -53,7 +53,7 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
   - It picks the `scheme: exact`, `eip155:84532`, USDC option (`USDC_ADDRESS` or the default, compared ignoring case). The amount must be a positive whole number and `payTo` an address, or the result is `QUOTE_INVALID`.
   - `Quote.raw` is that selected `accepts[]` entry, unchanged. `payee` is lowercased.
 - `types.ts`: the §5 types `getQuote` needs, copied until `packages/contracts` exists (TODO: import from `@apf/contracts`).
-- `quote.test.ts`: 24 `node:test` cases against throwaway local merchants, written before the implementation. Run with `pnpm payments:test` (about 6 s; two tests wait out the real 3 s timeout).
+- `quote.test.ts`: 24 test cases against throwaway local merchants, written before the implementation. Run with `pnpm payments:test` (about 6 s; two tests wait out the real 3 s timeout).
   - Mutation-checked: switching to `redirect: 'follow'` fails all 5 redirect tests, and removing the size cap fails both 64 KB tests.
 - Checked against the live PriceScope: it returns `{ amount: 10000, payee: 0x0d97…86ae, network: eip155:84532 }`.
 
@@ -138,3 +138,18 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 - A late settlement after `FAILED` still can't be recorded (no `FAILED -> SETTLED` transition); see the P4 note. The reconciler only fails at or after `validBefore` on chain time, which makes this rare. `pay`'s `SettlementNotRecordedError` still covers it.
 - Chunk 2 must call `startReconciler` at gateway startup and `stop()` it on shutdown.
 - Not yet covered: A19 (kill the gateway between `markSubmitted` and the response, restart, reconciler resolves it) needs B's real store.
+
+## 2026-10-24 · Merged `main` (B's gateway foundation) into the chunk-1 branch
+
+**Done**
+- Resolved the 6 add/add and content conflicts (root `package.json`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example`, `apps/gateway/package.json`, `pnpm-lock.yaml`). Kept `main`'s workspace, tooling and gateway config, and added our scripts, our x402/viem dependencies and the `PAYEE_*` keys in `.env.example`. The lockfile was regenerated, passes `--frozen-lockfile`, and our pinned versions pass `minimumReleaseAge`.
+- Adopted B's conventions:
+  - Types now come from `@apf/contracts` (identical to §5); `types.ts` is deleted.
+  - Relative imports use `.js` (NodeNext build); scripts run with `tsx`.
+  - Tests run on vitest.
+  - Time comes from an injected `Clock`: `createPayments({ store, config, clock? })`, default `systemClock`, per B's "only clock.ts reads the system time" lint rule.
+  - Prettier-formatted.
+- Full CI set on the merged tree: `lint`, `format:check`, `typecheck` and `build` all pass, and `test` gives 918 passed / 11 todo (all packages, including our 66 payments tests, now `pnpm payments:test`). Smoke-checked: PriceScope answers 402 via `tsx`, and `payments:balance` runs.
+
+**Open**
+- B's real `PaymentStore` is now on `main`. Run the payments tests against it (and A19) in addition to `MemoryPaymentStore`.

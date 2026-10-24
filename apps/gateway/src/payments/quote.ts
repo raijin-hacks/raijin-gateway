@@ -1,5 +1,5 @@
 // P3 · getQuote: ask the merchant for its price without paying.
-import type { Address, HttpMethod, Quote, QuoteCode } from './types.ts';
+import type { Address, HttpMethod, Quote, QuoteCode } from '@apf/contracts';
 
 export const NETWORK = 'eip155:84532';
 // Circle's test USDC on Base Sepolia.
@@ -62,7 +62,9 @@ async function readPaymentRequired(res: Response): Promise<unknown> {
     try {
       return JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
     } catch (err) {
-      throw new QuoteError('QUOTE_INVALID', 'PAYMENT-REQUIRED header is not base64 JSON', { cause: err });
+      throw new QuoteError('QUOTE_INVALID', 'PAYMENT-REQUIRED header is not base64 JSON', {
+        cause: err,
+      });
     }
   }
 
@@ -92,14 +94,17 @@ async function readCapped(res: Response): Promise<string> {
     }
   } catch (err) {
     if (err instanceof QuoteError) throw err;
-    throw new QuoteError('QUOTE_FAILED', `reading 402 body failed: ${describe(err)}`, { cause: err });
+    throw new QuoteError('QUOTE_FAILED', `reading 402 body failed: ${describe(err)}`, {
+      cause: err,
+    });
   }
   return Buffer.concat(chunks).toString('utf8');
 }
 
 function selectRequirements(paymentRequired: unknown): Record<string, unknown> {
   const accepts = (paymentRequired as { accepts?: unknown } | null)?.accepts;
-  if (!Array.isArray(accepts)) throw new QuoteError('QUOTE_INVALID', 'payment requirements have no accepts list');
+  if (!Array.isArray(accepts))
+    throw new QuoteError('QUOTE_INVALID', 'payment requirements have no accepts list');
 
   const usdc = usdcAddress();
   const match = accepts.find(
@@ -113,8 +118,15 @@ function selectRequirements(paymentRequired: unknown): Record<string, unknown> {
   );
   if (!match) throw new QuoteError('QUOTE_INVALID', `no exact ${NETWORK} USDC option offered`);
 
-  if (typeof match.amount !== 'string' || !/^[1-9]\d*$/.test(match.amount) || !Number.isSafeInteger(Number(match.amount))) {
-    throw new QuoteError('QUOTE_INVALID', `amount ${JSON.stringify(match.amount)} is not a positive integer`);
+  if (
+    typeof match.amount !== 'string' ||
+    !/^[1-9]\d*$/.test(match.amount) ||
+    !Number.isSafeInteger(Number(match.amount))
+  ) {
+    throw new QuoteError(
+      'QUOTE_INVALID',
+      `amount ${JSON.stringify(match.amount)} is not a positive integer`,
+    );
   }
   if (typeof match.payTo !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(match.payTo)) {
     throw new QuoteError('QUOTE_INVALID', `payTo ${JSON.stringify(match.payTo)} is not an address`);

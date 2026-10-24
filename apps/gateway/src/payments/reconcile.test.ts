@@ -1,21 +1,26 @@
 // P5 · reconcile(paymentId) and startReconciler, against a fake Base Sepolia JSON-RPC endpoint.
-import { test, after } from 'node:test';
+import { afterAll as after, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { decodeFunctionData, parseAbi, toEventSelector, pad } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { createPayments, startReconciler } from './index.ts';
-import { MemoryPaymentStore } from './testing/memory-store.ts';
-import type { PaymentState } from './types.ts';
+import { createPayments, startReconciler } from './index.js';
+import { systemClock } from '../clock.js';
+import { MemoryPaymentStore } from './testing/memory-store.js';
+import type { PaymentState } from '@apf/contracts';
 
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYER = '0x34bed74915ca69fdd99b23e28b949d4afc89a582';
 const PAYEE = '0x0d972d44bda2bc27420debd711395729480186ae';
 const NONCE = '0x61612c9ae811cda47919773e7ddf1de49f969a4e61f3716a9c502f893012bbe5';
 const TX = '0xbcf31d3f420dfd6006701912e015e935078a899bbd0f5bc0aeabedc0a41abb15';
-const AUTHORIZATION_USED = toEventSelector('event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)');
-const usdcAbi = parseAbi(['function authorizationState(address authorizer, bytes32 nonce) view returns (bool)']);
+const AUTHORIZATION_USED = toEventSelector(
+  'event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)',
+);
+const usdcAbi = parseAbi([
+  'function authorizationState(address authorizer, bytes32 nonce) view returns (bool)',
+]);
 
 const LATEST_BLOCK = 50_000_000n;
 // Chain time of the latest block, deliberately far behind the local clock: expiry must be judged by the chain.
@@ -24,7 +29,10 @@ const hex = (n: bigint | number) => `0x${n.toString(16)}`;
 
 const servers: ReturnType<typeof createServer>[] = [];
 after(() => {
-  for (const s of servers) s.closeAllConnections?.(), s.close();
+  for (const s of servers) {
+    s.closeAllConnections?.();
+    s.close();
+  }
 });
 
 interface ChainState {
@@ -46,7 +54,8 @@ async function fakeChain(state: ChainState) {
       const { id, method, params } = JSON.parse(raw);
       calls.push({ method, params });
       const reply = (result: unknown) => res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
-      const error = (message: string) => res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message } }));
+      const error = (message: string) =>
+        res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message } }));
       res.setHeader('Content-Type', 'application/json');
       if (state.down) return error('rpc down');
 
@@ -58,10 +67,23 @@ async function fakeChain(state: ChainState) {
         case 'eth_getBlockByNumber': {
           // 1 s blocks: deliberately not the 2 s a hard-coded guess would assume (real Base Sepolia is ~0.2 s).
           const [tag] = params as [string];
-          const n = tag === 'latest' ? LATEST_BLOCK : tag === 'finalized' ? LATEST_BLOCK - (state.finalizedLag ?? 0n) : BigInt(tag);
+          const n =
+            tag === 'latest'
+              ? LATEST_BLOCK
+              : tag === 'finalized'
+                ? LATEST_BLOCK - (state.finalizedLag ?? 0n)
+                : BigInt(tag);
           return reply({
-            number: hex(n), timestamp: hex(NOW_S - Number(LATEST_BLOCK - n)), hash: pad('0x01'), parentHash: pad('0x00'),
-            transactions: [], gasLimit: '0x0', gasUsed: '0x0', logsBloom: '0x', miner: PAYER, extraData: '0x',
+            number: hex(n),
+            timestamp: hex(NOW_S - Number(LATEST_BLOCK - n)),
+            hash: pad('0x01'),
+            parentHash: pad('0x00'),
+            transactions: [],
+            gasLimit: '0x0',
+            gasUsed: '0x0',
+            logsBloom: '0x',
+            miner: PAYER,
+            extraData: '0x',
           });
         }
         case 'eth_call': {
@@ -69,20 +91,40 @@ async function fakeChain(state: ChainState) {
           assert.equal(to.toLowerCase(), USDC.toLowerCase(), 'asks the USDC contract');
           const { functionName } = decodeFunctionData({ abi: usdcAbi, data });
           assert.equal(functionName, 'authorizationState');
-          const atFinalized = state.finalizedLag !== undefined && BigInt(block) === LATEST_BLOCK - state.finalizedLag;
-          const used = atFinalized && state.usedAtFinalized !== undefined ? state.usedAtFinalized : state.nonceUsed;
+          const atFinalized =
+            state.finalizedLag !== undefined && BigInt(block) === LATEST_BLOCK - state.finalizedLag;
+          const used =
+            atFinalized && state.usedAtFinalized !== undefined
+              ? state.usedAtFinalized
+              : state.nonceUsed;
           return reply(pad(used ? '0x01' : '0x00'));
         }
         case 'eth_getLogs': {
-          const [{ fromBlock, toBlock, topics }] = params as [{ fromBlock: string; toBlock: string; topics: string[] }];
-          if (BigInt(toBlock) - BigInt(fromBlock) + 1n > 200n) return error('eth_getLogs is limited to a 200 range');
+          const [{ fromBlock, toBlock, topics }] = params as [
+            { fromBlock: string; toBlock: string; topics: string[] },
+          ];
+          if (BigInt(toBlock) - BigInt(fromBlock) + 1n > 200n)
+            return error('eth_getLogs is limited to a 200 range');
           const b = state.settledInBlock;
           const inRange = b !== undefined && b >= BigInt(fromBlock) && b <= BigInt(toBlock);
           const matches = topics[0] === AUTHORIZATION_USED && topics[2]?.toLowerCase() === NONCE;
-          return reply(inRange && matches ? [{
-            address: USDC, topics: [AUTHORIZATION_USED, pad(PAYER), NONCE], data: '0x',
-            blockNumber: hex(b!), blockHash: pad('0x02'), transactionHash: TX, transactionIndex: '0x0', logIndex: '0x0', removed: false,
-          }] : []);
+          return reply(
+            inRange && matches
+              ? [
+                  {
+                    address: USDC,
+                    topics: [AUTHORIZATION_USED, pad(PAYER), NONCE],
+                    data: '0x',
+                    blockNumber: hex(b!),
+                    blockHash: pad('0x02'),
+                    transactionHash: TX,
+                    transactionIndex: '0x0',
+                    logIndex: '0x0',
+                    removed: false,
+                  },
+                ]
+              : [],
+          );
         }
         default:
           return error(`unexpected ${method}`);
@@ -97,12 +139,24 @@ async function fakeChain(state: ChainState) {
 // A payment row as pay() leaves it: nonce, expiry and the full x402 payload stored.
 function seed(store: MemoryPaymentStore, id: string, state: PaymentState, validBeforeS: number) {
   store.seed({
-    id, state, amount: 10_000, payee: PAYEE, nonce: NONCE, valid_before: validBeforeS * 1000,
+    id,
+    state,
+    amount: 10_000,
+    payee: PAYEE,
+    nonce: NONCE,
+    valid_before: validBeforeS * 1000,
     authorization_json: JSON.stringify({
       x402Version: 2,
       payload: {
         signature: '0x',
-        authorization: { from: PAYER, to: PAYEE, value: '10000', validAfter: '0', validBefore: String(validBeforeS), nonce: NONCE },
+        authorization: {
+          from: PAYER,
+          to: PAYEE,
+          value: '10000',
+          validAfter: '0',
+          validBefore: String(validBeforeS),
+          nonce: NONCE,
+        },
       },
     }),
   });
@@ -115,14 +169,27 @@ async function setup(chain: ChainState) {
   const stuck: { paymentId: string; reason: string }[] = [];
   const payments = createPayments({
     store,
-    config: { walletPrivateKey, rpcUrl: rpc.url, onStuck: (paymentId, reason) => stuck.push({ paymentId, reason }) },
+    config: {
+      walletPrivateKey,
+      rpcUrl: rpc.url,
+      onStuck: (paymentId, reason) => stuck.push({ paymentId, reason }),
+    },
   });
-  return { store, rpc, payments, stuck, wallet: privateKeyToAccount(walletPrivateKey).address.toLowerCase() };
+  return {
+    store,
+    rpc,
+    payments,
+    stuck,
+    wallet: privateKeyToAccount(walletPrivateKey).address.toLowerCase(),
+  };
 }
 
 for (const state of ['SUBMITTED', 'UNKNOWN'] as const) {
   test(`${state}, nonce used on-chain: SETTLED with the tx hash from AuthorizationUsed`, async () => {
-    const { store, rpc, payments } = await setup({ nonceUsed: true, settledInBlock: LATEST_BLOCK - 150n });
+    const { store, rpc, payments } = await setup({
+      nonceUsed: true,
+      settledInBlock: LATEST_BLOCK - 150n,
+    });
     seed(store, 'pay_1', state, NOW_S + 60);
 
     assert.equal(await payments.reconcile('pay_1'), 'SETTLED');
@@ -130,8 +197,15 @@ for (const state of ['SUBMITTED', 'UNKNOWN'] as const) {
     assert.equal(store.rows.get('pay_1')?.tx_hash, TX);
 
     const call = rpc.calls.find((c) => c.method === 'eth_call')!;
-    const { args } = decodeFunctionData({ abi: usdcAbi, data: (call.params[0] as { data: `0x${string}` }).data });
-    assert.equal(String(args[0]).toLowerCase(), PAYER, 'authorizer is the payer from the stored authorization');
+    const { args } = decodeFunctionData({
+      abi: usdcAbi,
+      data: (call.params[0] as { data: `0x${string}` }).data,
+    });
+    assert.equal(
+      String(args[0]).toLowerCase(),
+      PAYER,
+      'authorizer is the payer from the stored authorization',
+    );
     assert.equal(args[1], NONCE, 'nonce is the stored one');
   });
 }
@@ -146,7 +220,10 @@ test('nonce used, settlement found further back than one 200-block window', asyn
 
 test('nonce used long ago: the settlement block is located from the measured block time', async () => {
   // validBefore was 20,000 s (= 20,000 blocks) ago; settled 100 blocks before that.
-  const { store, payments } = await setup({ nonceUsed: true, settledInBlock: LATEST_BLOCK - 20_100n });
+  const { store, payments } = await setup({
+    nonceUsed: true,
+    settledInBlock: LATEST_BLOCK - 20_100n,
+  });
   seed(store, 'pay_1', 'UNKNOWN', NOW_S - 20_000);
 
   assert.equal(await payments.reconcile('pay_1'), 'SETTLED');
@@ -193,7 +270,11 @@ test('finalized block past validBefore with the nonce unused there: FAILED', asy
 });
 
 test('reorg: latest says unused, but the settlement is in the finalized chain: SETTLED, never FAILED', async () => {
-  const { store, payments } = await setup({ nonceUsed: false, finalizedLag: 900n, usedAtFinalized: true });
+  const { store, payments } = await setup({
+    nonceUsed: false,
+    finalizedLag: 900n,
+    usedAtFinalized: true,
+  });
   seed(store, 'pay_1', 'UNKNOWN', NOW_S - 1000);
 
   assert.equal(await payments.reconcile('pay_1'), 'SETTLED');
@@ -213,7 +294,10 @@ test('expiry is judged by chain time, not the local clock', async () => {
   // validBefore is past by the local clock, but the chain has not reached it: the authorization can still settle.
   const { store, payments } = await setup({ nonceUsed: false });
   seed(store, 'pay_1', 'UNKNOWN', NOW_S + 60);
-  assert.ok(NOW_S + 60 < Date.now() / 1000, 'validBefore is already past by the local clock');
+  assert.ok(
+    NOW_S + 60 < systemClock.now() / 1000,
+    'validBefore is already past by the local clock',
+  );
 
   assert.equal(await payments.reconcile('pay_1'), 'UNKNOWN');
   assert.equal(store.called('fail'), 0);
@@ -243,7 +327,10 @@ test('running the reconciler twice changes nothing the second time', async () =>
 
   assert.equal(await payments.reconcile('pay_1'), 'SETTLED');
   assert.equal(await payments.reconcile('pay_1'), 'SETTLED');
-  assert.deepEqual(store.calls.filter((c) => c.method === 'settle').map((c) => c.changed), [true]);
+  assert.deepEqual(
+    store.calls.filter((c) => c.method === 'settle').map((c) => c.changed),
+    [true],
+  );
 });
 
 // ---------- never stuck silently, never fooled by the wrong chain ----------
@@ -264,24 +351,31 @@ test('unreadable stored authorization: falls back to our own wallet as the autho
 
   assert.equal(await payments.reconcile('pay_1'), 'SETTLED');
   const call = rpc.calls.find((c) => c.method === 'eth_call')!;
-  const { args } = decodeFunctionData({ abi: usdcAbi, data: (call.params[0] as { data: `0x${string}` }).data });
+  const { args } = decodeFunctionData({
+    abi: usdcAbi,
+    data: (call.params[0] as { data: `0x${string}` }).data,
+  });
   assert.equal(String(args[0]).toLowerCase(), wallet);
 });
 
 test('RPC down long past expiry: stays UNKNOWN (no proof), reported stuck once', async () => {
   const { store, payments, stuck } = await setup({ nonceUsed: false, down: true });
-  seed(store, 'pay_1', 'UNKNOWN', Math.floor(Date.now() / 1000) - 3600); // expired an hour ago by the local clock
+  seed(store, 'pay_1', 'UNKNOWN', Math.floor(systemClock.now() / 1000) - 3600); // expired an hour ago by the local clock
 
   assert.equal(await payments.reconcile('pay_1'), 'UNKNOWN');
   assert.equal(await payments.reconcile('pay_1'), 'UNKNOWN');
   assert.equal(store.called('fail'), 0, 'an unreadable chain is never proof of non-settlement');
-  assert.deepEqual(stuck.map((s) => s.paymentId), ['pay_1'], 'reported once, not on every pass');
+  assert.deepEqual(
+    stuck.map((s) => s.paymentId),
+    ['pay_1'],
+    'reported once, not on every pass',
+  );
   assert.match(stuck[0].reason, /chain/i);
 });
 
 test('RPC down but not yet long expired: not reported stuck', async () => {
   const { store, payments, stuck } = await setup({ nonceUsed: false, down: true });
-  seed(store, 'pay_1', 'UNKNOWN', Math.floor(Date.now() / 1000) + 60);
+  seed(store, 'pay_1', 'UNKNOWN', Math.floor(systemClock.now() / 1000) + 60);
 
   assert.equal(await payments.reconcile('pay_1'), 'UNKNOWN');
   assert.equal(stuck.length, 0);
@@ -294,7 +388,10 @@ test('row missing its nonce: cannot be resolved from the chain, reported stuck',
 
   assert.equal(await payments.reconcile('pay_1'), 'UNKNOWN');
   assert.equal(store.called('fail'), 0);
-  assert.deepEqual(stuck.map((s) => s.paymentId), ['pay_1']);
+  assert.deepEqual(
+    stuck.map((s) => s.paymentId),
+    ['pay_1'],
+  );
   assert.match(stuck[0].reason, /nonce/);
 });
 
@@ -306,7 +403,11 @@ test('startReconciler runs once at startup, then every interval, until stopped',
 
   const stop = startReconciler(payments, store, 50);
   await new Promise((r) => setTimeout(r, 10));
-  assert.equal((await store.get('pay_a'))?.state, 'FAILED', 'startup pass runs immediately, not after the first interval');
+  assert.equal(
+    (await store.get('pay_a'))?.state,
+    'FAILED',
+    'startup pass runs immediately, not after the first interval',
+  );
 
   seed(store, 'pay_b', 'SIGNED', NOW_S + 60);
   await new Promise((r) => setTimeout(r, 120));

@@ -1,15 +1,40 @@
 {
-  "name": "agent-payment-firewall",
+  "name": "calhacks-13-0",
+  "version": "0.1.0",
   "private": true,
+  "description": "Cal Hacks 13.0 project",
+  "type": "module",
   "packageManager": "pnpm@10.34.7",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.13"
   },
   "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -b && tsc -p tsconfig.check.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc -b",
     "payments:wallets": "pnpm --filter @apf/gateway payments:wallets",
     "payments:balance": "pnpm --filter @apf/gateway payments:balance",
     "payments:pay-once": "pnpm --filter @apf/gateway payments:pay-once",
-    "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope",
-    "payments:test": "pnpm --filter @apf/gateway test"
+    "payments:test": "pnpm --filter @apf/gateway exec vitest run src/payments",
+    "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope"
+  },
+  "dependencies": {
+    "@apf/contracts": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.5"
   }
 }

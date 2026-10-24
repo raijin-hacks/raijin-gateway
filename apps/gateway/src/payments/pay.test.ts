@@ -1,13 +1,14 @@
 // P4/P5 · pay(paymentId, quote) and reconcile(paymentId), written before the implementation.
 // Each test runs a throwaway local merchant; signing uses a random key, so nothing touches the chain.
-import { test, after } from 'node:test';
+import { afterAll as after, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { generatePrivateKey } from 'viem/accounts';
-import { createPayments } from './index.ts';
-import { getQuote } from './quote.ts';
-import { MemoryPaymentStore } from './testing/memory-store.ts';
+import { createPayments } from './index.js';
+import { getQuote } from './quote.js';
+import { systemClock } from '../clock.js';
+import { MemoryPaymentStore } from './testing/memory-store.js';
 
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYEE = '0x0d972d44bda2bc27420debd711395729480186ae';
@@ -19,10 +20,15 @@ const decode = (h: string) => JSON.parse(Buffer.from(h, 'base64').toString('utf8
 
 const servers: ReturnType<typeof createServer>[] = [];
 after(() => {
-  for (const s of servers) s.closeAllConnections?.(), s.close();
+  for (const s of servers) {
+    s.closeAllConnections?.();
+    s.close();
+  }
 });
 
-async function listen(handler: (req: IncomingMessage, res: ServerResponse) => void): Promise<string> {
+async function listen(
+  handler: (req: IncomingMessage, res: ServerResponse) => void,
+): Promise<string> {
   const server = createServer(handler);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -30,7 +36,13 @@ async function listen(handler: (req: IncomingMessage, res: ServerResponse) => vo
 }
 
 // What the merchant does with a paid request.
-type Outcome = 'drop_after_settle' | 'settle' | 'settle_slowly' | '402' | '500' | '200_without_settlement_header';
+type Outcome =
+  | 'drop_after_settle'
+  | 'settle'
+  | 'settle_slowly'
+  | '402'
+  | '500'
+  | '200_without_settlement_header';
 
 interface PaidRequest {
   header: string; // PAYMENT-SIGNATURE exactly as received
@@ -53,10 +65,17 @@ async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: 
           x402Version: 2,
           error: 'Payment required',
           resource: { url: `http://merchant${req.url}`, mimeType: 'application/json' },
-          accepts: [{
-            scheme: 'exact', network: 'eip155:84532', amount: String(PRICE), asset: USDC, payTo: PAYEE,
-            maxTimeoutSeconds: 300, extra: { name: 'USDC', version: '2' },
-          }],
+          accepts: [
+            {
+              scheme: 'exact',
+              network: 'eip155:84532',
+              amount: String(PRICE),
+              asset: USDC,
+              payTo: PAYEE,
+              maxTimeoutSeconds: 300,
+              extra: { name: 'USDC', version: '2' },
+            },
+          ],
         }),
       });
       return res.end('{}');
@@ -79,7 +98,12 @@ async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: 
       case 'settle':
         res.writeHead(200, {
           'Content-Type': 'application/json',
-          'PAYMENT-RESPONSE': encode({ success: true, transaction: TX, network: 'eip155:84532', payer: authorization.from }),
+          'PAYMENT-RESPONSE': encode({
+            success: true,
+            transaction: TX,
+            network: 'eip155:84532',
+            payer: authorization.from,
+          }),
         });
         return res.end('{"company":"acme","products":[]}');
       case '402':
@@ -113,7 +137,10 @@ async function setup(outcomes: Outcome[]) {
   store.reserve(paymentId, { amount: PRICE, payee: PAYEE });
   const m = await merchant(store, paymentId, outcomes);
   const rpc = await countingRpc();
-  const payments = createPayments({ store, config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url } });
+  const payments = createPayments({
+    store,
+    config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url },
+  });
   const quote = await getQuote(m.url, 'GET');
   return { store, paymentId, merchant: m, rpc, payments, quote };
 }
@@ -131,8 +158,16 @@ test('(a) connection dropped after settlement: payment ends UNKNOWN, never FAILE
 
   // The order of writes is what makes UNKNOWN recoverable.
   assert.equal(m.paid.length, 1);
-  assert.equal(m.paid[0].stateWhenReceived, 'SUBMITTED', 'markSigned and markSubmitted happen before the paid request is sent');
-  assert.equal((await store.get(paymentId))?.nonce, m.paid[0].nonce, 'the stored nonce is the one the merchant received');
+  assert.equal(
+    m.paid[0].stateWhenReceived,
+    'SUBMITTED',
+    'markSigned and markSubmitted happen before the paid request is sent',
+  );
+  assert.equal(
+    (await store.get(paymentId))?.nonce,
+    m.paid[0].nonce,
+    'the stored nonce is the one the merchant received',
+  );
   assert.equal(m.paid[0].value, String(PRICE), 'signed for exactly quote.amount');
 });
 
@@ -152,7 +187,13 @@ for (const outcome of ['402', '500', '200_without_settlement_header'] as const) 
 // ---------- (b) a retry resends the same signed authorization ----------
 
 test('(b) retry after a dropped connection resends the exact same authorization and never signs again', async () => {
-  const { store, paymentId, merchant: m, payments, quote } = await setup(['drop_after_settle', 'settle']);
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['drop_after_settle', 'settle']);
 
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
   const stored = await store.get(paymentId);
@@ -160,7 +201,11 @@ test('(b) retry after a dropped connection resends the exact same authorization 
   const retry = await payments.pay(paymentId, quote);
 
   assert.equal(m.paid.length, 2);
-  assert.equal(m.paid[1].header, m.paid[0].header, 'PAYMENT-SIGNATURE must be byte-identical on retry');
+  assert.equal(
+    m.paid[1].header,
+    m.paid[0].header,
+    'PAYMENT-SIGNATURE must be byte-identical on retry',
+  );
   assert.equal(store.called('markSigned'), 1, 'one authorization per payment');
   assert.equal((await store.get(paymentId))?.nonce, stored?.nonce, 'nonce unchanged');
   assert.equal((await store.get(paymentId))?.authorization_json, stored?.authorization_json);
@@ -197,7 +242,10 @@ for (const [name, reservation] of mismatches) {
 }
 
 const wrongRequirements: [string, Record<string, unknown>][] = [
-  ['another token (same amount and payee)', { asset: '0x1111111111111111111111111111111111111111' }],
+  [
+    'another token (same amount and payee)',
+    { asset: '0x1111111111111111111111111111111111111111' },
+  ],
   ['a scheme other than exact', { scheme: 'upto' }],
 ];
 for (const [name, change] of wrongRequirements) {
@@ -214,7 +262,13 @@ for (const [name, change] of wrongRequirements) {
 }
 
 test('(d) retry with a quote that no longer matches the reservation is refused, nothing resent', async () => {
-  const { store, paymentId, merchant: m, payments, quote } = await setup(['drop_after_settle', 'settle']);
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['drop_after_settle', 'settle']);
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
 
   await assert.rejects(payments.pay(paymentId, { ...quote, payee: ATTACKER }), /reservation/);
@@ -242,7 +296,10 @@ test('(e) store already SETTLED by the reconciler: pay still reports SETTLED, re
 
   assert.equal(result.state, 'SETTLED');
   assert.equal(result.state === 'SETTLED' && result.txHash, TX);
-  assert.deepEqual(store.calls.filter((c) => c.method === 'settle').map((c) => c.changed), [false]);
+  assert.deepEqual(
+    store.calls.filter((c) => c.method === 'settle').map((c) => c.changed),
+    [false],
+  );
   assert.equal((await store.get(paymentId))?.state, 'SETTLED');
 });
 
@@ -253,20 +310,41 @@ test('(e) store refuses settlement (row already FAILED): pay must not report SET
   await assert.rejects(payments.pay(paymentId, quote), (err: unknown) => {
     assert.ok(err instanceof Error);
     assert.match(err.message, /FAILED/);
-    assert.equal((err as { txHash?: string }).txHash, TX, 'the error carries the tx hash so it can be reconciled by hand');
+    assert.equal(
+      (err as { txHash?: string }).txHash,
+      TX,
+      'the error carries the tx hash so it can be reconciled by hand',
+    );
     return true;
   });
-  assert.equal((await store.get(paymentId))?.state, 'FAILED', 'pay does not invent a transition the store refused');
+  assert.equal(
+    (await store.get(paymentId))?.state,
+    'FAILED',
+    'pay does not invent a transition the store refused',
+  );
 });
 
 // ---------- (f) concurrent pay() calls for the same payment ----------
 
 test('(f) concurrent pay() calls for one payment send the authorization once and share the result', async () => {
-  const { store, paymentId, merchant: m, payments, quote } = await setup(['settle_slowly', 'settle']);
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['settle_slowly', 'settle']);
 
-  const [first, second] = await Promise.all([payments.pay(paymentId, quote), payments.pay(paymentId, quote)]);
+  const [first, second] = await Promise.all([
+    payments.pay(paymentId, quote),
+    payments.pay(paymentId, quote),
+  ]);
 
-  assert.equal(m.paid.length, 1, 'the second call joined the in-flight one instead of sending again');
+  assert.equal(
+    m.paid.length,
+    1,
+    'the second call joined the in-flight one instead of sending again',
+  );
   assert.equal(first.state, 'SETTLED');
   assert.deepEqual(second, first);
   assert.equal(store.called('markSigned'), 1);
@@ -276,7 +354,10 @@ test('(f) a concurrent call with a different quote is refused, not joined, and s
   const { paymentId, merchant: m, payments, quote } = await setup(['settle_slowly']);
 
   const first = payments.pay(paymentId, quote);
-  await assert.rejects(payments.pay(paymentId, { ...quote, url: `${quote.url}&other=1` }), /different quote/);
+  await assert.rejects(
+    payments.pay(paymentId, { ...quote, url: `${quote.url}&other=1` }),
+    /different quote/,
+  );
 
   assert.equal((await first).state, 'SETTLED');
   assert.equal(m.paid.length, 1);
@@ -294,24 +375,51 @@ test('(f) two gateway processes retrying one payment at once: the ledger still e
   // First attempt drops, leaving UNKNOWN with the stored authorization. Then two separate payments modules on one
   // store (like two gateway processes, which the in-process guard can't coordinate) retry at the same time:
   // one request settles slowly, the other gets a fast, ambiguous 402.
-  const { store, paymentId, merchant: m, payments, quote } = await setup(['drop_after_settle', 'settle_slowly', '402']);
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['drop_after_settle', 'settle_slowly', '402']);
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
 
   const processA = createPayments({ store, config: { walletPrivateKey: generatePrivateKey() } });
   const processB = createPayments({ store, config: { walletPrivateKey: generatePrivateKey() } });
-  const results = await Promise.all([processA.pay(paymentId, quote), processB.pay(paymentId, quote)]);
+  const results = await Promise.all([
+    processA.pay(paymentId, quote),
+    processB.pay(paymentId, quote),
+  ]);
 
   assert.equal(m.paid.length, 3);
-  assert.equal(new Set(m.paid.map((p) => p.header)).size, 1, 'every send carried the one stored authorization');
-  assert.deepEqual(results.map((r) => r.state).sort(), ['SETTLED', 'UNKNOWN'], 'one caller hears UNKNOWN: ambiguous, not wrong');
-  assert.equal((await store.get(paymentId))?.state, 'SETTLED', 'the ambiguous answer cannot undo the settlement');
+  assert.equal(
+    new Set(m.paid.map((p) => p.header)).size,
+    1,
+    'every send carried the one stored authorization',
+  );
+  assert.deepEqual(
+    results.map((r) => r.state).sort(),
+    ['SETTLED', 'UNKNOWN'],
+    'one caller hears UNKNOWN: ambiguous, not wrong',
+  );
+  assert.equal(
+    (await store.get(paymentId))?.state,
+    'SETTLED',
+    'the ambiguous answer cannot undo the settlement',
+  );
   assert.equal(store.called('fail'), 0);
 });
 
 // ---------- (g) pay() acts on the current row, not a stale snapshot ----------
 
 test('(g) reconciler failed the payment after pay() read the row: nothing is sent, pay reports FAILED', async () => {
-  const { store, paymentId, merchant: m, payments, quote } = await setup(['drop_after_settle', 'settle']);
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['drop_after_settle', 'settle']);
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
 
   // pay() reads UNKNOWN, then the reconciler fails the row before the send.
@@ -334,9 +442,15 @@ test('(g) reconciler failed the payment after pay() read the row: nothing is sen
 });
 
 test('(g) retry of an authorization already past validBefore: not sent, left for the reconciler', async () => {
-  const { store, paymentId, merchant: m, payments, quote } = await setup(['drop_after_settle', 'settle']);
+  const {
+    store,
+    paymentId,
+    merchant: m,
+    payments,
+    quote,
+  } = await setup(['drop_after_settle', 'settle']);
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
-  store.rows.get(paymentId)!.valid_before = Date.now() - 1_000;
+  store.rows.get(paymentId)!.valid_before = systemClock.now() - 1_000;
 
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
   assert.equal(m.paid.length, 1, 'an expired authorization cannot settle, so it is not resent');
@@ -367,12 +481,21 @@ test('(c) reconciler fails a payment stuck in SIGNED without asking the chain or
   await listen((_req, res) => (merchantHits++, res.end()));
   // Signed with plenty of validity left: it is still FAILED, because it never left the process.
   store.seed({
-    id: 'pay_signed', state: 'SIGNED', amount: PRICE, payee: PAYEE,
+    id: 'pay_signed',
+    state: 'SIGNED',
+    amount: PRICE,
+    payee: PAYEE,
     nonce: '0x65fdb52b2c867d0825b833ad0e0f22fe127f8262640d187602c7acd6cb6dc26a',
-    valid_before: Date.now() + 5 * 60_000,
-    authorization_json: JSON.stringify({ x402Version: 2, payload: { signature: '0x', authorization: {} } }),
+    valid_before: systemClock.now() + 5 * 60_000,
+    authorization_json: JSON.stringify({
+      x402Version: 2,
+      payload: { signature: '0x', authorization: {} },
+    }),
   });
-  const payments = createPayments({ store, config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url } });
+  const payments = createPayments({
+    store,
+    config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url },
+  });
 
   const result = await payments.reconcile('pay_signed');
 

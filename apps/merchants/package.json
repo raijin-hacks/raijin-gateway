@@ -11,6 +11,6 @@
     "viem": "2.57.7"
   },
   "scripts": {
-    "start:pricescope": "node --env-file-if-exists=../../.env src/pricescope.ts"
+    "start:pricescope": "tsx --env-file-if-exists=../../.env src/pricescope.ts"
   }
 }

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src", "test"],
+  // Colocated src/**/*.test.ts files are typechecked by tsconfig.check.json instead.
+  "exclude": ["src/**/*.test.ts"],
+  "references": [{ "path": "../../packages/contracts" }]
+}

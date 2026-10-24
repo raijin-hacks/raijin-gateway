@@ -5,13 +5,18 @@
 // (tx 0xbcf31d3f…, nonce 0x61612c9a…): used = true; a random nonce = false.
 import { createPublicClient, http, parseAbi, parseAbiItem, type PublicClient } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { usdcAddress } from './quote.ts';
-import type { PaymentsModule, PaymentStore } from './types.ts';
+import { usdcAddress } from './quote.js';
+import type { Clock } from '../clock.js';
+import type { PaymentsModule, PaymentStore } from '@apf/contracts';
 
 type Resolution = Awaited<ReturnType<PaymentsModule['reconcile']>>;
 
-const usdcAbi = parseAbi(['function authorizationState(address authorizer, bytes32 nonce) view returns (bool)']);
-const authorizationUsed = parseAbiItem('event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)');
+const usdcAbi = parseAbi([
+  'function authorizationState(address authorizer, bytes32 nonce) view returns (bool)',
+]);
+const authorizationUsed = parseAbiItem(
+  'event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)',
+);
 
 const LOG_WINDOW = 200n; // the public Base Sepolia RPC rejects eth_getLogs over more than 200 blocks
 const LOOKBACK_S = 15n * 60n; // search this much chain time before validBefore, then record "unknown"
@@ -26,18 +31,27 @@ export interface ReconcileOptions {
   wallet: `0x${string}`; // our payer address: the authorizer of every authorization we sign
   // Called once per payment that the reconciler cannot resolve on its own and that needs an operator.
   onStuck?: (paymentId: string, reason: string) => void;
+  clock: Clock; // local time, used only to decide when to report a payment stuck
 }
 
-export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }: ReconcileOptions) {
+export function createReconcile(
+  store: PaymentStore,
+  { rpcUrl, wallet, onStuck, clock }: ReconcileOptions,
+) {
   // Created on first use: payments that need no chain lookup (SIGNED, terminal states) never touch the RPC.
   let client: PublicClient | undefined;
-  const chain = () => (client ??= createPublicClient({ chain: baseSepolia, transport: http(rpcUrl || undefined) }) as PublicClient);
+  const chain = () =>
+    (client ??= createPublicClient({
+      chain: baseSepolia,
+      transport: http(rpcUrl || undefined),
+    }) as PublicClient);
   // A wrong-network RPC would read every nonce as unused and fail payments that settled. Verify before trusting it.
   let chainVerified = false;
   const verifiedChain = async () => {
     if (!chainVerified) {
       const id = await chain().getChainId();
-      if (id !== baseSepolia.id) throw new Error(`RPC is on chain ${id}, expected Base Sepolia (${baseSepolia.id})`);
+      if (id !== baseSepolia.id)
+        throw new Error(`RPC is on chain ${id}, expected Base Sepolia (${baseSepolia.id})`);
       chainVerified = true;
     }
     return chain();
@@ -51,7 +65,8 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
     console.error(`[reconciler] STUCK ${paymentId}: ${reason}`);
     onStuck?.(paymentId, reason);
   };
-  const longExpired = (validBeforeMs: number | null) => validBeforeMs === null || Date.now() > validBeforeMs + STUCK_AFTER_MS;
+  const longExpired = (validBeforeMs: number | null) =>
+    validBeforeMs === null || clock.now() > validBeforeMs + STUCK_AFTER_MS;
 
   return async function reconcile(paymentId: string): Promise<Resolution> {
     const row = await store.get(paymentId);
@@ -71,7 +86,10 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
 
     // SUBMITTED or UNKNOWN: the merchant may hold the authorization. Only the chain can say what happened.
     if (!row.nonce) {
-      stuck(paymentId, `${row.state} with no stored nonce: the chain cannot be asked, needs an operator`);
+      stuck(
+        paymentId,
+        `${row.state} with no stored nonce: the chain cannot be asked, needs an operator`,
+      );
       return 'UNKNOWN';
     }
     const nonce = row.nonce as `0x${string}`;
@@ -80,7 +98,9 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
     try {
       authorizer = JSON.parse(row.authorization_json ?? '').payload.authorization.from ?? wallet;
     } catch (err) {
-      console.warn(`[reconciler] ${paymentId}: stored authorization is unreadable, using our wallet as authorizer: ${describe(err)}`);
+      console.warn(
+        `[reconciler] ${paymentId}: stored authorization is unreadable, using our wallet as authorizer: ${describe(err)}`,
+      );
     }
 
     // Read the nonce at a known block, and judge expiry by that block's timestamp, not the local clock.
@@ -94,17 +114,31 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
       used = await nonceUsedAt(authorizer, nonce, blockNumber);
     } catch (err) {
       // No proof either way: never fail on an unreadable chain, the merchant may have settled.
-      console.warn(`[reconciler] ${paymentId}: chain lookup failed, leaving ${row.state}: ${describe(err)}`);
-      if (longExpired(row.valid_before)) stuck(paymentId, `chain unreadable long past validBefore: ${describe(err)}`);
+      console.warn(
+        `[reconciler] ${paymentId}: chain lookup failed, leaving ${row.state}: ${describe(err)}`,
+      );
+      if (longExpired(row.valid_before))
+        stuck(paymentId, `chain unreadable long past validBefore: ${describe(err)}`);
       return 'UNKNOWN';
     }
 
     // Used at the latest block: settle. If that block is later reorged away we have counted the budget as spent
     // early, which is conservative; the authorization stays valid and is normally re-included.
-    if (used) return settleFromChain(paymentId, row.valid_before, authorizer, nonce, blockNumber, blockTimestampS);
+    if (used)
+      return settleFromChain(
+        paymentId,
+        row.valid_before,
+        authorizer,
+        nonce,
+        blockNumber,
+        blockTimestampS,
+      );
 
     if (row.valid_before === null) {
-      stuck(paymentId, `${row.state}, nonce unused, but no stored validBefore: expiry cannot be proven`);
+      stuck(
+        paymentId,
+        `${row.state}, nonce unused, but no stored validBefore: expiry cannot be proven`,
+      );
       return 'UNKNOWN';
     }
     if (blockTimestampS * 1000n < BigInt(row.valid_before)) return 'UNKNOWN'; // still valid: the merchant could still settle it
@@ -120,12 +154,22 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
       finalizedTimestampS = finalized.timestamp;
       usedAtFinalized = await nonceUsedAt(authorizer, nonce, finalizedNumber);
     } catch (err) {
-      console.warn(`[reconciler] ${paymentId}: finalized lookup failed, leaving ${row.state}: ${describe(err)}`);
-      if (longExpired(row.valid_before)) stuck(paymentId, `finalized block unreadable long past validBefore: ${describe(err)}`);
+      console.warn(
+        `[reconciler] ${paymentId}: finalized lookup failed, leaving ${row.state}: ${describe(err)}`,
+      );
+      if (longExpired(row.valid_before))
+        stuck(paymentId, `finalized block unreadable long past validBefore: ${describe(err)}`);
       return 'UNKNOWN';
     }
     if (usedAtFinalized) {
-      return settleFromChain(paymentId, row.valid_before, authorizer, nonce, finalizedNumber, finalizedTimestampS);
+      return settleFromChain(
+        paymentId,
+        row.valid_before,
+        authorizer,
+        nonce,
+        finalizedNumber,
+        finalizedTimestampS,
+      );
     }
     // Unused at a finalized block at or past validBefore: USDC rejects it from here on, on a chain that can't change.
     if (finalizedTimestampS * 1000n >= BigInt(row.valid_before)) {
@@ -135,19 +179,32 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
     return 'UNKNOWN'; // expired at the head, not yet at the finalized block: wait for finality
   };
 
-  function nonceUsedAt(authorizer: `0x${string}`, nonce: `0x${string}`, blockNumber: bigint): Promise<boolean> {
+  function nonceUsedAt(
+    authorizer: `0x${string}`,
+    nonce: `0x${string}`,
+    blockNumber: bigint,
+  ): Promise<boolean> {
     return chain().readContract({
-      address: usdcAddress() as `0x${string}`, abi: usdcAbi, functionName: 'authorizationState',
-      args: [authorizer, nonce], blockNumber,
+      address: usdcAddress() as `0x${string}`,
+      abi: usdcAbi,
+      functionName: 'authorizationState',
+      args: [authorizer, nonce],
+      blockNumber,
     });
   }
 
   async function settleFromChain(
-    paymentId: string, validBeforeMs: number | null, authorizer: `0x${string}`, nonce: `0x${string}`,
-    atBlock: bigint, atTimestampS: bigint,
+    paymentId: string,
+    validBeforeMs: number | null,
+    authorizer: `0x${string}`,
+    nonce: `0x${string}`,
+    atBlock: bigint,
+    atTimestampS: bigint,
   ): Promise<Resolution> {
-    const validBeforeS = validBeforeMs === null ? atTimestampS : BigInt(Math.floor(validBeforeMs / 1000));
-    const txHash = (await findSettlementTx(authorizer, nonce, atBlock, atTimestampS, validBeforeS)) ?? 'unknown';
+    const validBeforeS =
+      validBeforeMs === null ? atTimestampS : BigInt(Math.floor(validBeforeMs / 1000));
+    const txHash =
+      (await findSettlementTx(authorizer, nonce, atBlock, atTimestampS, validBeforeS)) ?? 'unknown';
     await store.settle(paymentId, txHash);
     return currentState(paymentId);
   }
@@ -155,7 +212,11 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
   // Looks up the AuthorizationUsed event backwards from about validBefore, in RPC-sized windows.
   // Block time is measured from the chain, never assumed: a wrong guess silently searches the wrong blocks.
   async function findSettlementTx(
-    authorizer: `0x${string}`, nonce: `0x${string}`, latest: bigint, latestTimestampS: bigint, validBeforeS: bigint,
+    authorizer: `0x${string}`,
+    nonce: `0x${string}`,
+    latest: bigint,
+    latestTimestampS: bigint,
+    validBeforeS: bigint,
   ): Promise<string | null> {
     try {
       const sampleFrom = latest > RATE_SAMPLE_BLOCKS ? latest - RATE_SAMPLE_BLOCKS : 0n;
@@ -176,16 +237,24 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
       for (let queries = 0; to > stop && queries < MAX_LOG_QUERIES; queries++) {
         const from = to - LOG_WINDOW + 1n > stop ? to - LOG_WINDOW + 1n : stop;
         const logs = await chain().getLogs({
-          address: usdcAddress() as `0x${string}`, event: authorizationUsed, args: { authorizer, nonce }, fromBlock: from, toBlock: to,
+          address: usdcAddress() as `0x${string}`,
+          event: authorizationUsed,
+          args: { authorizer, nonce },
+          fromBlock: from,
+          toBlock: to,
         });
         if (logs[0]?.transactionHash) return logs[0].transactionHash;
         to = from - 1n;
       }
     } catch (err) {
-      console.warn(`[reconciler] AuthorizationUsed lookup failed, recording tx "unknown": ${describe(err)}`);
+      console.warn(
+        `[reconciler] AuthorizationUsed lookup failed, recording tx "unknown": ${describe(err)}`,
+      );
       return null;
     }
-    console.warn(`[reconciler] no AuthorizationUsed event found near validBefore, recording tx "unknown"`);
+    console.warn(
+      `[reconciler] no AuthorizationUsed event found near validBefore, recording tx "unknown"`,
+    );
     return null;
   }
 
@@ -196,7 +265,11 @@ export function createReconcile(store: PaymentStore, { rpcUrl, wallet, onStuck }
 }
 
 // Runs once now, then every intervalMs after the previous pass finishes (passes never overlap). Returns stop().
-export function startReconciler(payments: PaymentsModule, store: PaymentStore, intervalMs = DEFAULT_INTERVAL_MS): () => void {
+export function startReconciler(
+  payments: PaymentsModule,
+  store: PaymentStore,
+  intervalMs = DEFAULT_INTERVAL_MS,
+): () => void {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
