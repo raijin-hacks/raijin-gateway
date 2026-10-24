@@ -1,0 +1,61 @@
+# Dependabot: hackathon mode (security fixes only).
+#
+# open-pull-requests-limit: 0 turns off routine version bumps while the team is
+# shipping. Security updates are unaffected: enable them under
+# Settings → Code security → Dependabot security updates.
+#
+# After the hackathon, raise the limits (e.g. 5) to resume weekly version updates.
+#
+# cooldown matches pnpm-workspace.yaml's minimumReleaseAge (7 days), so Dependabot
+# never proposes a version pnpm would refuse to install. Dependabot PRs run the
+# normal CI; nothing auto-merges.
+version: 2
+
+updates:
+  # pnpm workspace: one root lockfile covers apps/* and packages/*.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ['*']
+    commit-message:
+      prefix: deps
+
+  # Python test dependencies (requirements-test.txt).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ['*']
+    commit-message:
+      prefix: deps
+
+  # GitHub Actions used by .github/workflows/ci.yml.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ['*']
+    commit-message:
+      prefix: ci
