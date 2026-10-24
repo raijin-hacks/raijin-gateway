@@ -7,6 +7,9 @@ import { MAX_PAID_BODY_BYTES } from './pay.js';
 import { systemClock } from '../clock.js';
 import { MemoryPaymentStore } from './testing/memory-store.js';
 
+// Unpinned on purpose: these tests talk to local fake merchants. The gateway uses transport.ts.
+const plainFetch = (url: string, init: RequestInit) => fetch(url, init);
+
 const chain = vi.hoisted(() => ({
   used: false,
   getChainId: vi.fn(async () => 84532),
@@ -77,8 +80,13 @@ async function fixture(response: () => Response = success) {
   const store = new MemoryPaymentStore();
   store.reserve('p', { amount: 10000, payee: PAYEE });
   const walletPrivateKey = generatePrivateKey();
-  const payments = createPayments({ store, config: { walletPrivateKey }, clock: systemClock });
-  const quote = await getQuote('https://merchant.test/data', 'GET');
+  const payments = createPayments({
+    transport: plainFetch,
+    store,
+    config: { walletPrivateKey },
+    clock: systemClock,
+  });
+  const quote = await getQuote('https://merchant.test/data', 'GET', plainFetch);
   return { store, payments, quote, fetch, wallet: privateKeyToAccount(walletPrivateKey).address };
 }
 
@@ -90,9 +98,11 @@ describe('authorization lifetime', () => {
         'fetch',
         vi.fn(async () => required({ maxTimeoutSeconds: value })),
       );
-      await expect(getQuote('https://merchant.test/data', 'GET')).rejects.toMatchObject({
-        code: 'QUOTE_INVALID',
-      });
+      await expect(getQuote('https://merchant.test/data', 'GET', plainFetch)).rejects.toMatchObject(
+        {
+          code: 'QUOTE_INVALID',
+        },
+      );
     },
   );
 

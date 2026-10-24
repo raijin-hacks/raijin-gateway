@@ -9,7 +9,12 @@ import { createLogger, stdoutSink } from './log.js';
 import { loadCatalog } from './catalog/load.js';
 import { createGatewayAdmission } from './judge/gateway.js';
 import { createJudge, createStubJudge } from './judge/index.js';
-import { createPayments, QuoteError, startReconciler } from './payments/index.js';
+import {
+  createDestinationVerifier,
+  createPayments,
+  createPinnedTransport,
+  startReconciler,
+} from './payments/index.js';
 import { createPaymentStore } from './db/payment-store.js';
 import { createMockPayments } from './mock-payments.js';
 import { withPaymentEvents } from './payment-events.js';
@@ -37,31 +42,20 @@ const judge =
 const walletKey = process.env.WALLET_PRIVATE_KEY;
 if (config.paymentsMode === 'real' && !/^0x[0-9a-f]{64}$/i.test(walletKey ?? ''))
   throw new Error('Invalid WALLET_PRIVATE_KEY');
-const underlying =
+// Real mode reaches merchants only through the J2b pinned transport: catalog-bound origins,
+// classified and pinned DNS, verified peer, TLS identity kept, no redirects or proxies.
+const payments =
   config.paymentsMode === 'mock'
     ? createMockPayments(store, catalog, systemClock)
     : createPayments({
         store,
         clock: systemClock,
+        transport: createPinnedTransport(createDestinationVerifier(catalog)),
         config: {
           walletPrivateKey: walletKey as `0x${string}`,
           rpcUrl: process.env.BASE_SEPOLIA_RPC_URL,
         },
       });
-// J2b is a documented follow-up: no live merchant contact/signing through an unchecked
-// connector. Reconciliation of already-submitted authorizations remains enabled.
-const payments =
-  config.paymentsMode === 'mock'
-    ? underlying
-    : {
-        ...underlying,
-        async getQuote(): Promise<never> {
-          throw new QuoteError('QUOTE_FAILED', 'Pinned transport required');
-        },
-        async pay(): Promise<never> {
-          throw new Error('PINNED_TRANSPORT_REQUIRED');
-        },
-      };
 const deps = {
   db,
   clock: systemClock,

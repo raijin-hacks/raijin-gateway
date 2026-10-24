@@ -1,11 +1,28 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { loadCatalog } from '../catalog/index.js';
 import { FIXTURE_CATALOG_PATH } from '../../test/harness/db.js';
 import { createDestinationVerifier, isPublicAddress } from './destination.js';
 
 const signal = () => new AbortController().signal;
+// The fixture catalog plus one HTTPS merchant: payments only contacts cataloged origins.
+const tmp = mkdtempSync(join(tmpdir(), 'destination-'));
+afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+function httpsCatalog() {
+  const path = join(tmp, 'catalog.json');
+  writeFileSync(
+    path,
+    readFileSync(FIXTURE_CATALOG_PATH, 'utf8').replace(
+      'http://localhost:4102',
+      'https://merchant.test',
+    ),
+  );
+  return loadCatalog(path);
+}
 const verifier = (answers: { address: string; family: number }[]) =>
-  createDestinationVerifier(loadCatalog(FIXTURE_CATALOG_PATH), async () => answers);
+  createDestinationVerifier(httpsCatalog(), async () => answers);
 
 describe('J2b address classification groundwork', () => {
   it.each([
@@ -109,7 +126,7 @@ describe('J2b checked resolution groundwork (no merchant sockets)', () => {
         { address: '2606:4700::1111', family: 6 },
       ])
       .mockResolvedValueOnce([{ address: '169.254.169.254', family: 4 }]);
-    const verify = createDestinationVerifier(loadCatalog(FIXTURE_CATALOG_PATH), resolve);
+    const verify = createDestinationVerifier(httpsCatalog(), resolve);
     expect(await verify('https://merchant.test/data', signal())).toEqual({
       canonicalUrl: 'https://merchant.test/data',
       hostname: 'merchant.test',
@@ -123,7 +140,7 @@ describe('J2b checked resolution groundwork (no merchant sockets)', () => {
   });
 
   it('maps DNS errors to denial', async () => {
-    const verify = createDestinationVerifier(loadCatalog(FIXTURE_CATALOG_PATH), async () => {
+    const verify = createDestinationVerifier(httpsCatalog(), async () => {
       throw new Error('DNS failure');
     });
     await expect(verify('https://merchant.test/data', signal())).rejects.toMatchObject({
@@ -133,7 +150,7 @@ describe('J2b checked resolution groundwork (no merchant sockets)', () => {
 
   it('bounds stalled DNS with the caller deadline', async () => {
     const resolve = vi.fn(() => new Promise<never>(() => undefined));
-    const verify = createDestinationVerifier(loadCatalog(FIXTURE_CATALOG_PATH), resolve);
+    const verify = createDestinationVerifier(httpsCatalog(), resolve);
     const controller = new AbortController();
     const result = verify('https://merchant.test/data', controller.signal);
     controller.abort();
@@ -151,7 +168,7 @@ describe('J2b checked resolution groundwork (no merchant sockets)', () => {
     'https://user:pass@merchant.test/data',
   ])('denies %s without DNS', async (url) => {
     const resolve = vi.fn(async () => [{ address: '8.8.8.8', family: 4 }]);
-    const verify = createDestinationVerifier(loadCatalog(FIXTURE_CATALOG_PATH), resolve);
+    const verify = createDestinationVerifier(httpsCatalog(), resolve);
     await expect(verify(url, signal())).rejects.toMatchObject({ code: 'TIER_0_DENIAL' });
     expect(resolve).not.toHaveBeenCalled();
   });

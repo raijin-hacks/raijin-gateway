@@ -10,6 +10,9 @@ import { getQuote } from './quote.js';
 import { systemClock } from '../clock.js';
 import { MemoryPaymentStore } from './testing/memory-store.js';
 
+// Unpinned on purpose: these tests talk to local fake merchants. The gateway uses transport.ts.
+const plainFetch = (url: string, init: RequestInit) => fetch(url, init);
+
 // Controlled chain evidence for paid-request tests. The dedicated reconciler suite exercises
 // JSON-RPC; a merchant header alone never changes this fixture's nonce state.
 const chainUsed = vi.hoisted(() => new Set<string>());
@@ -189,10 +192,11 @@ async function setup(outcomes: Outcome[]) {
   const m = await merchant(store, paymentId, outcomes);
   const rpc = await countingRpc();
   const payments = createPayments({
+    transport: plainFetch,
     store,
     config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url },
   });
-  const quote = await getQuote(m.url, 'GET');
+  const quote = await getQuote(m.url, 'GET', plainFetch);
   return { store, paymentId, merchant: m, rpc, payments, quote };
 }
 
@@ -431,8 +435,16 @@ test('(f) two gateway processes retrying one payment at once: the ledger still e
   } = await setup(['drop_after_settle', 'settle_slowly', '402']);
   assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
 
-  const processA = createPayments({ store, config: { walletPrivateKey: generatePrivateKey() } });
-  const processB = createPayments({ store, config: { walletPrivateKey: generatePrivateKey() } });
+  const processA = createPayments({
+    transport: plainFetch,
+    store,
+    config: { walletPrivateKey: generatePrivateKey() },
+  });
+  const processB = createPayments({
+    transport: plainFetch,
+    store,
+    config: { walletPrivateKey: generatePrivateKey() },
+  });
   const results = await Promise.all([
     processA.pay(paymentId, quote),
     processB.pay(paymentId, quote),
@@ -646,6 +658,7 @@ test('(c) reconciler fails a payment stuck in SIGNED without asking the chain or
     }),
   });
   const payments = createPayments({
+    transport: plainFetch,
     store,
     config: { walletPrivateKey: generatePrivateKey(), rpcUrl: rpc.url },
   });

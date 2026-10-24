@@ -170,7 +170,9 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     const judge = createStubJudge('stub-approve');
     const judged = vi.spyOn(judge, 'judge');
     const h = await fixture(judge);
-    h.payments.getQuote.mockImplementation(realGetQuote);
+    h.payments.getQuote.mockImplementation((url, method) =>
+      realGetQuote(url, method, (u, init) => fetch(u, init)),
+    );
     vi.stubGlobal(
       'fetch',
       vi.fn(

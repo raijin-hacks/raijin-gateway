@@ -1,6 +1,8 @@
 // P3 · getQuote: ask the merchant for its price without paying.
 import type { Address, HttpMethod, Quote, QuoteCode } from '@apf/contracts';
+import { DestinationError } from './destination.js';
 import { readCapped } from './read-capped.js';
+import type { Transport } from './transport.js';
 
 export const NETWORK = 'eip155:84532';
 // Circle's test USDC on Base Sepolia.
@@ -24,15 +26,23 @@ export class QuoteError extends Error {
   }
 }
 
-export async function getQuote(canonicalUrl: string, method: HttpMethod): Promise<Quote> {
+// `transport` is the pinned connection (transport.ts) in the gateway; tests may pass plain fetch.
+export async function getQuote(
+  canonicalUrl: string,
+  method: HttpMethod,
+  transport: Transport,
+): Promise<Quote> {
   // One signal for the whole exchange, so a body that stalls after the headers also times out.
   const signal = AbortSignal.timeout(TIMEOUT_MS);
 
   let res: Response;
   try {
     // A redirect could point the gateway at an attacker: never follow it.
-    res = await fetch(canonicalUrl, { method, redirect: 'manual', signal });
+    res = await transport(canonicalUrl, { method, redirect: 'manual', signal });
   } catch (err) {
+    if (err instanceof DestinationError) {
+      throw new QuoteError('QUOTE_INVALID', `destination refused: ${err.message}`, { cause: err });
+    }
     throw new QuoteError('QUOTE_FAILED', `quote request failed: ${describe(err)}`, { cause: err });
   }
 

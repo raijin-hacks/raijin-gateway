@@ -90,10 +90,14 @@ export function createDestinationVerifier(
   resolve: Resolve = (hostname) => lookup(hostname, { all: true, verbatim: true }),
 ) {
   const canonicalize = createCanonicalizer(catalog);
+  // Payments only ever contacts merchants the operator cataloged, HTTPS ones included.
+  const cataloged = new Set(catalog.merchants.map((merchant) => new URL(merchant.origin).origin));
   return async (rawUrl: string, signal: AbortSignal): Promise<PinnedDestination> => {
     const canonical = canonicalize(rawUrl);
     if (!canonical.ok) throw new DestinationError('invalid merchant destination');
     const url = new URL(canonical.url);
+    if (!cataloged.has(url.origin))
+      throw new DestinationError('destination is not a cataloged merchant');
     const hostname = url.hostname.replace(/^\[|\]$/g, '');
     const local = url.protocol === 'http:'; // only exact operator-bound loopback origins canonicalize
     const literalFamily = isIP(hostname);

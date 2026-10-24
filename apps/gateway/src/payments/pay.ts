@@ -7,6 +7,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { MAX_AUTHORIZATION_SECONDS, NETWORK, usdcAddress, validateTimeout } from './quote.js';
 import { readCapped } from './read-capped.js';
 import type { createReconcile, SettlementReceipt } from './reconcile.js';
+import type { Transport } from './transport.js';
 import type { Clock } from '../clock.js';
 import type { PaymentsModule, PaymentStore, Quote } from '@apf/contracts';
 
@@ -37,6 +38,7 @@ export function createPay(
   walletPrivateKey: `0x${string}`,
   clock: Clock,
   reconcile: ReturnType<typeof createReconcile>,
+  transport: Transport,
 ) {
   const client = new x402Client().register(
     'eip155:*',
@@ -150,7 +152,7 @@ export function createPay(
     let res: Response;
     let body: string | null;
     try {
-      res = await fetch(quote.url, {
+      res = await transport(quote.url, {
         method: quote.method,
         headers: paymentHeaders,
         redirect: 'manual',

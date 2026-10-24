@@ -10,6 +10,9 @@ import { systemClock } from '../clock.js';
 import { MemoryPaymentStore } from './testing/memory-store.js';
 import type { PaymentState } from '@apf/contracts';
 
+// Unpinned on purpose: these tests talk to local fake merchants. The gateway uses transport.ts.
+const plainFetch = (url: string, init: RequestInit) => fetch(url, init);
+
 const USDC = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 const PAYER = '0x34bed74915ca69fdd99b23e28b949d4afc89a582';
 const PAYEE = '0x0d972d44bda2bc27420debd711395729480186ae';
@@ -171,6 +174,7 @@ async function setup(chain: ChainState) {
   const walletPrivateKey = generatePrivateKey();
   const stuck: { paymentId: string; reason: string }[] = [];
   const payments = createPayments({
+    transport: plainFetch,
     store,
     config: {
       walletPrivateKey,
