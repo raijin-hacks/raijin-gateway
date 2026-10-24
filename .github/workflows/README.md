@@ -3,10 +3,13 @@
 `ci.yml` runs on pull requests, pushes to `main`, and manual dispatch.
 It uses read-only repository permissions and cancels superseded runs on the same ref.
 
-The repository currently contains only `README.md` and `Design.md`. There is no
-implemented language toolchain, package manager, application, or existing check
-command. The inspection job reports this in the Actions summary; application
-checks are explicitly skipped until a root `package.json` exists.
+The unconditional `Python tests` job sets up Python 3.12, caches pip downloads,
+installs `requirements-test.txt`, and runs `python -m pytest`. Local venv setup
+is documented in `tests/README.md`.
+
+There is no Node application manifest yet. The inspection job reports this in
+the Actions summary; Node application checks are explicitly skipped until a root
+`package.json` exists. Python tests run independently of that inspection.
 
 ## Activating application checks
 

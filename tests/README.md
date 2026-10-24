@@ -1,7 +1,17 @@
 # Payment gateway contract suite
 
-Install with `python -m pip install -r requirements-test.txt`, then run
-`python -m pytest`. Python 3.10+ is required. No network, wallet, model API,
+Create and activate a local environment, then install the existing test requirements:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-test.txt
+python -m pytest
+```
+
+`.venv` and generated test caches are gitignored. CI uses Python 3.12 with a
+cached pip install and runs this same full suite on every configured CI event.
+Python 3.10+ is required. No network, wallet, model API,
 database, or secrets are needed at test runtime.
 
 Filters: `pytest -k Deterministic`, `pytest -k Canary`, `pytest -m Matrix`.
@@ -26,4 +36,4 @@ transactions across processes, signer, timeout enforcement, authenticated
 reconciliation proofs, and actual model adapter. The mock timeout raises
 TimeoutError immediately; it does not implement a real deadline. Reconciliation
 proof labels are supplied by the trusted test harness, never by AgentRequest.
-The Python suite is invoked explicitly; the existing Node CI scaffold is unchanged.
+The Python CI job runs independently of the conditional Node application checks.
