@@ -215,8 +215,8 @@ Balance check run: payer has 0 USDC, 0 ETH (not funded yet).
 **Not yet proven live**
 - Dropped reply + restart and delayed proof on the real chain: these need a merchant failure mode (`/_control drop_after_settle`, P6). Covered by in-process tests with injected timing (Codex, `chunk1/recovery-tests`), labeled as simulated.
 
-## 2026-10-24 · CDP spike: typed-data policy proven, key separation not yet
-Script: `pnpm --filter @apf/gateway payments:cdp-spike`; `@coinbase/cdp-sdk` pinned at 1.59.0 (1.60.0 is under the 7-day release-age rule). CDP server account `0x432D4cEA07086049E9c2125348285A01c084Fe5B`; latest policy `ea9c66eb-d385-45a8-8f89-c9732e362be4`, created and attached by a separate admin key.
+## 2026-10-24 · CDP spike: passed (policy enforced remotely, admin/runtime keys separated)
+Script: `pnpm --filter @apf/gateway payments:cdp-spike admin` then `... runtime`, as separate processes; `@coinbase/cdp-sdk` pinned at 1.59.0 (1.60.0 is under the 7-day release-age rule). CDP server account `0x432D4cEA07086049E9c2125348285A01c084Fe5B`; policy `60fd197c-c874-4b81-9497-aaf8968a66a1`, created and attached by the admin key; all probes below ran under the runtime key alone.
 
 **Policy:** accept `signEvmTypedData` only when the verifying contract is Base Sepolia USDC, the type is `TransferWithAuthorization`, `to` is PriceScope `0x0d97…86ae` and `value` <= 10000; reject `signEvmHash`, `signEvmMessage`, `signEvmTransaction`, `sendEvmTransaction`.
 
@@ -234,6 +234,11 @@ Script: `pnpm --filter @apf/gateway payments:cdp-spike`; `@coinbase/cdp-sdk` pin
 
 **No-match behavior (observed):** within an operation that has rules, a non-matching request is rejected. An operation with **no rules at all is allowed**. So every other signing route needs an explicit reject rule; without one, `signHash` of an over-cap transfer bypasses the typed-data rule.
 
-**Separation: failing.** The runtime key (the gateway's) could `updatePolicy` (replaced the rules) and detach the account policy. Independence needs the runtime key stripped of policy and account-management permissions; only the admin key may hold them. Rerun the spike after that change. Until it passes, there is no "CDP independently constrains a compromised gateway" claim.
+| runtime key `updatePolicy` (loosen) | 403 Missing required scope: policies#manage |
+| runtime key detaches the account policy | 403 Missing required scope: policies#manage; the policy is still attached afterwards |
+
+**Separation: passing.** Policy administration needs the admin key (`CDP_ADMIN_API_KEY_*`); the gateway's runtime key can sign but can't edit or detach its policy.
+- Gotcha found: `@coinbase/cdp-sdk` keeps one module-level HTTP client, so the last `CdpClient` constructed in a process decides which key every call uses. An earlier single-process run therefore sent the "runtime" probes with the admin key and wrongly showed separation failing. The gateway must only ever construct the runtime client.
+- Remaining trust: whoever holds the admin key, and CDP itself. The wallet secret is shared by both keys in this setup.
 
 **What the policy does NOT check:** HTTP endpoint, subjects, plan or cumulative totals. It is a per-signature cap on payee, value, token and type only.

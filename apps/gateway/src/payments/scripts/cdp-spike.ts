@@ -29,62 +29,74 @@ const transferTypes = {
   ],
 };
 
-// Runtime credentials (CDP_API_KEY_ID/SECRET + CDP_WALLET_SECRET) only sign. Policy administration
-// uses a separate key (CDP_ADMIN_API_KEY_ID/SECRET), so the runtime can't loosen its own policy.
-const cdp = new CdpClient();
-const admin = new CdpClient({
-  apiKeyId: process.env.CDP_ADMIN_API_KEY_ID,
-  apiKeySecret: process.env.CDP_ADMIN_API_KEY_SECRET,
-  walletSecret: process.env.CDP_WALLET_SECRET,
-});
-const account = await cdp.evm.getOrCreateAccount({ name: 'apf-spike-payer' });
-console.log('account', account.address);
+// Two modes, run as SEPARATE processes: the SDK keeps one module-level HTTP client, so the last
+// CdpClient constructed in a process silently decides which key every call uses.
+//   admin    (CDP_ADMIN_API_KEY_ID/SECRET): create a strict policy and attach it to the account.
+//   runtime  (CDP_API_KEY_ID/SECRET + CDP_WALLET_SECRET only): signing probes and separation attempts.
+const mode = process.argv[2];
+if (mode !== 'admin' && mode !== 'runtime') throw new Error('usage: cdp-spike.ts admin | runtime');
 
-const policy = await admin.policies.createPolicy({
-  policy: {
-    scope: 'account',
-    description: 'APF spike, USDC transfer to PriceScope, max 10000', // [A-Za-z0-9 ,.]{1,50}
-    rules: [
-      {
-        action: 'accept',
-        operation: 'signEvmTypedData',
-        criteria: [
-          { type: 'evmTypedDataVerifyingContract', addresses: [USDC], operator: 'in' },
-          {
-            type: 'evmTypedDataField',
-            types: {
-              types: { TransferWithAuthorization: transferTypes.TransferWithAuthorization },
-              primaryType: 'TransferWithAuthorization',
+if (mode === 'admin') {
+  const admin = new CdpClient({
+    apiKeyId: process.env.CDP_ADMIN_API_KEY_ID,
+    apiKeySecret: process.env.CDP_ADMIN_API_KEY_SECRET,
+    walletSecret: process.env.CDP_WALLET_SECRET,
+  });
+  const account = await admin.evm.getOrCreateAccount({ name: 'apf-spike-payer' });
+  const policy = await admin.policies.createPolicy({
+    policy: {
+      scope: 'account',
+      description: 'APF spike, USDC transfer to PriceScope, max 10000', // [A-Za-z0-9 ,.]{1,50}
+      rules: [
+        {
+          action: 'accept',
+          operation: 'signEvmTypedData',
+          criteria: [
+            { type: 'evmTypedDataVerifyingContract', addresses: [USDC], operator: 'in' },
+            {
+              type: 'evmTypedDataField',
+              types: {
+                types: { TransferWithAuthorization: transferTypes.TransferWithAuthorization },
+                primaryType: 'TransferWithAuthorization',
+              },
+              conditions: [
+                { addresses: [PAYEE], operator: 'in', path: 'to' },
+                { value: MAX.toString(), operator: '<=', path: 'value' },
+              ],
             },
-            conditions: [
-              { addresses: [PAYEE], operator: 'in', path: 'to' },
-              { value: MAX.toString(), operator: '<=', path: 'value' },
-            ],
-          },
-        ],
-      },
-      // An operation with no rule is allowed (found in the first run): reject every other route.
-      { action: 'reject', operation: 'signEvmHash' },
-      {
-        action: 'reject',
-        operation: 'signEvmMessage',
-        criteria: [{ type: 'evmMessage', match: '.*' }],
-      },
-      {
-        action: 'reject',
-        operation: 'signEvmTransaction',
-        criteria: [{ type: 'ethValue', ethValue: '0', operator: '>=' }],
-      },
-      {
-        action: 'reject',
-        operation: 'sendEvmTransaction',
-        criteria: [{ type: 'ethValue', ethValue: '0', operator: '>=' }],
-      },
-    ],
-  },
-});
-await admin.evm.updateAccount({ address: account.address, update: { accountPolicy: policy.id } });
-console.log('policy', policy.id, 'attached to account by the admin key');
+          ],
+        },
+        // An operation with no rule is allowed (found in the first run): reject every other route.
+        { action: 'reject', operation: 'signEvmHash' },
+        {
+          action: 'reject',
+          operation: 'signEvmMessage',
+          criteria: [{ type: 'evmMessage', match: '.*' }],
+        },
+        {
+          action: 'reject',
+          operation: 'signEvmTransaction',
+          criteria: [{ type: 'ethValue', ethValue: '0', operator: '>=' }],
+        },
+        {
+          action: 'reject',
+          operation: 'sendEvmTransaction',
+          criteria: [{ type: 'ethValue', ethValue: '0', operator: '>=' }],
+        },
+      ],
+    },
+  });
+  await admin.evm.updateAccount({ address: account.address, update: { accountPolicy: policy.id } });
+  const attached = await admin.evm.getAccount({ address: account.address });
+  console.log('admin: account', account.address, 'policy', policy.id);
+  console.log('admin: account policies now', JSON.stringify(attached.policies ?? null));
+  process.exit(0);
+}
+
+const cdp = new CdpClient(); // runtime credentials only in this process
+const account = await cdp.evm.getOrCreateAccount({ name: 'apf-spike-payer' });
+const policyId = (await cdp.evm.getAccount({ address: account.address })).policies?.[0] ?? '';
+console.log('runtime: account', account.address, 'attached policy', policyId);
 
 function transfer(overrides: { to?: string; value?: bigint; contract?: string } = {}) {
   return {
@@ -201,7 +213,7 @@ await probe(
 // Separation check: the runtime key must not be able to replace or loosen the policy.
 await probe('runtime key edits policies (separation)', 'refused', async () => {
   await cdp.policies.updatePolicy({
-    id: policy.id,
+    id: policyId,
     policy: {
       description: 'loosened by runtime',
       rules: [{ action: 'accept', operation: 'signEvmHash' }],
@@ -214,10 +226,9 @@ await probe('runtime key detaches the account policy (separation)', 'refused', a
   return 'policy detached';
 });
 
-// Whatever the runtime key managed, leave the account protected by the admin-attached policy.
-await admin.evm.updateAccount({ address: account.address, update: { accountPolicy: policy.id } });
-const attached = await admin.evm.getAccount({ address: account.address });
-console.log('final account policies:', JSON.stringify(attached.policies ?? null));
-
+console.log(
+  'runtime: account policies after the attempts',
+  JSON.stringify((await cdp.evm.getAccount({ address: account.address })).policies ?? null),
+);
 console.table(results);
-console.log(JSON.stringify({ account: account.address, policy: policy.id, results }, null, 2));
+console.log(JSON.stringify({ account: account.address, policy: policyId, results }, null, 2));
