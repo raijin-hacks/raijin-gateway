@@ -1,8 +1,8 @@
-import ApprovalQueue from "./approval-queue";
-import EventFeed from "./event-feed";
-import MandateForm from "./mandate-form";
-import StatsHeader from "./stats-header";
-import TrustGraph from "./trust-graph";
+import ApprovalQueue from './approval-queue';
+import EventFeed from './event-feed';
+import MandateForm from './mandate-form';
+import StatsHeader from './stats-header';
+import TrustGraph from './trust-graph';
 
 export default function Home() {
   return (

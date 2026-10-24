@@ -1,4 +1,4 @@
-import type { StreamEvent } from "./contracts";
+import type { StreamEvent } from './contracts';
 
 // One EventSource for the whole page, shared by every component that subscribes.
 type Listener = (events: StreamEvent[]) => void;
@@ -23,7 +23,7 @@ export function subscribe(listener: Listener): () => void {
   listeners.add(listener);
   if (!source) {
     // Our own route; it proxies the gateway or sends mock events when MOCK=1
-    source = new EventSource("/api/stream");
+    source = new EventSource('/api/stream');
     source.onmessage = (message) => {
       buffer.push(JSON.parse(message.data));
       if (!timer) timer = setTimeout(flush, FLUSH_MS);
@@ -32,7 +32,8 @@ export function subscribe(listener: Listener): () => void {
 
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0 && source) { // close the stream when nothing is listening
+    if (listeners.size === 0 && source) {
+      // close the stream when nothing is listening
       source.close();
       source = null;
       if (timer) clearTimeout(timer);

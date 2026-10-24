@@ -1,20 +1,20 @@
-"use client";
+'use client';
 
-import { Fragment, useEffect, useRef, useState } from "react";
-import type { StreamEvent } from "../lib/contracts";
-import { formatMoney } from "../lib/money";
-import { subscribe } from "../lib/stream";
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { StreamEvent } from '../lib/contracts';
+import { formatMoney } from '../lib/money';
+import { subscribe } from '../lib/stream';
 
 const MAX_ROWS = 500;
 
-type Decision = Extract<StreamEvent, { type: "decision" }>;
+type Decision = Extract<StreamEvent, { type: 'decision' }>;
 // `key` is our own counter: the same decision_id can arrive twice (pending, then resolved)
 type Row = { key: number; event: Decision };
 
-const OUTCOME_COLOR: Record<Decision["outcome"], string> = {
-  approved: "text-green-400",
-  denied: "text-red-400",
-  pending: "text-amber-400",
+const OUTCOME_COLOR: Record<Decision['outcome'], string> = {
+  approved: 'text-green-400',
+  denied: 'text-red-400',
+  pending: 'text-amber-400',
 };
 
 export default function EventFeed() {
@@ -22,13 +22,17 @@ export default function EventFeed() {
   const [openKey, setOpenKey] = useState<number | null>(null);
   const nextKey = useRef(0);
 
-  useEffect(() => subscribe((events) => {
-    const incoming: Row[] = [];
-    for (const event of events) {
-      if (event.type === "decision") incoming.unshift({ key: nextKey.current++, event }); // newest first
-    }
-    if (incoming.length > 0) setRows((prev) => [...incoming, ...prev].slice(0, MAX_ROWS));
-  }), []);
+  useEffect(
+    () =>
+      subscribe((events) => {
+        const incoming: Row[] = [];
+        for (const event of events) {
+          if (event.type === 'decision') incoming.unshift({ key: nextKey.current++, event }); // newest first
+        }
+        if (incoming.length > 0) setRows((prev) => [...incoming, ...prev].slice(0, MAX_ROWS));
+      }),
+    [],
+  );
 
   return (
     <section>
@@ -48,8 +52,10 @@ export default function EventFeed() {
         <tbody>
           {rows.map(({ key, event: e }) => (
             <Fragment key={key}>
-              <tr onClick={() => setOpenKey(openKey === key ? null : key)}
-                className="cursor-pointer border-t border-gray-700 hover:bg-gray-800">
+              <tr
+                onClick={() => setOpenKey(openKey === key ? null : key)}
+                className="cursor-pointer border-t border-gray-700 hover:bg-gray-800"
+              >
                 <td className="py-1 pr-3 font-mono">{new Date(e.at).toLocaleTimeString()}</td>
                 <td className="pr-3 font-mono">{e.mandate_id}</td>
                 <td className="pr-3">{e.stage}</td>
@@ -57,17 +63,23 @@ export default function EventFeed() {
                 <td className="pr-3">
                   <div className="flex flex-wrap gap-1">
                     {e.reasons.map((r) => (
-                      <span key={r} className="rounded bg-gray-700 px-1.5 text-xs">{r}</span>
+                      <span key={r} className="rounded bg-gray-700 px-1.5 text-xs">
+                        {r}
+                      </span>
                     ))}
                   </div>
                 </td>
-                <td className="pr-3 text-right font-mono">{e.price !== null ? formatMoney(e.price) : "—"}</td>
+                <td className="pr-3 text-right font-mono">
+                  {e.price !== null ? formatMoney(e.price) : '—'}
+                </td>
                 <td className="text-right font-mono">{e.latency_ms} ms</td>
               </tr>
               {openKey === key && (
                 <tr>
                   <td colSpan={7}>
-                    <pre className="overflow-x-auto bg-gray-900 p-2 text-xs">{JSON.stringify(e, null, 2)}</pre>
+                    <pre className="overflow-x-auto bg-gray-900 p-2 text-xs">
+                      {JSON.stringify(e, null, 2)}
+                    </pre>
                   </td>
                 </tr>
               )}

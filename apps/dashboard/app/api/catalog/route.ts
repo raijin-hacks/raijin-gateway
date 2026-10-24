@@ -2,9 +2,9 @@
 export async function GET() {
   return Response.json({
     merchants: [
-      { id: "mer_pricing", name: "PriceScope", category: "market data" },
-      { id: "mer_weather", name: "SkyData", category: "weather" },
-      { id: "mer_news", name: "NewsWire", category: "news" },
+      { id: 'mer_pricing', name: 'PriceScope', category: 'market data' },
+      { id: 'mer_weather', name: 'SkyData', category: 'weather' },
+      { id: 'mer_news', name: 'NewsWire', category: 'news' },
     ],
   });
 }

@@ -1,16 +1,28 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useState } from "react";
-import { subscribe } from "../lib/stream";
+import { useEffect, useRef, useState } from 'react';
+import { subscribe } from '../lib/stream';
 
 // Counts since page load. Each decision is counted once, at its first event
 // (a pending decision can arrive again when a human resolves it).
-type Totals = { decisions: number; judgeCalls: number; grantHits: number; grantMs: number[]; judgeMs: number[] };
+type Totals = {
+  decisions: number;
+  judgeCalls: number;
+  grantHits: number;
+  grantMs: number[];
+  judgeMs: number[];
+};
 
 export default function StatsHeader() {
   const startedAt = useRef(0);
   const seen = useRef(new Set<string>());
-  const [totals, setTotals] = useState<Totals>({ decisions: 0, judgeCalls: 0, grantHits: 0, grantMs: [], judgeMs: [] });
+  const [totals, setTotals] = useState<Totals>({
+    decisions: 0,
+    judgeCalls: 0,
+    grantHits: 0,
+    grantMs: [],
+    judgeMs: [],
+  });
   const [minutes, setMinutes] = useState(0); // since page load
 
   useEffect(() => {
@@ -21,11 +33,17 @@ export default function StatsHeader() {
     const unsubscribe = subscribe((events) => {
       const add: Totals = { decisions: 0, judgeCalls: 0, grantHits: 0, grantMs: [], judgeMs: [] };
       for (const e of events) {
-        if (e.type !== "decision" || seen.current.has(e.decision_id)) continue;
+        if (e.type !== 'decision' || seen.current.has(e.decision_id)) continue;
         seen.current.add(e.decision_id);
         add.decisions++;
-        if (e.stage === "judge") { add.judgeCalls++; add.judgeMs.push(e.latency_ms); }
-        if (e.reasons.includes("GRANT_HIT")) { add.grantHits++; add.grantMs.push(e.latency_ms); }
+        if (e.stage === 'judge') {
+          add.judgeCalls++;
+          add.judgeMs.push(e.latency_ms);
+        }
+        if (e.reasons.includes('GRANT_HIT')) {
+          add.grantHits++;
+          add.grantMs.push(e.latency_ms);
+        }
       }
       if (add.decisions === 0) return;
       setTotals((t) => ({
@@ -38,14 +56,17 @@ export default function StatsHeader() {
       updateMinutes();
     });
 
-    return () => { clearInterval(tick); unsubscribe(); };
+    return () => {
+      clearInterval(tick);
+      unsubscribe();
+    };
   }, []);
 
   const { decisions, judgeCalls, grantHits, grantMs, judgeMs } = totals;
 
   return (
     <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-      <Stat label="Decisions / min" value={minutes > 0 ? (decisions / minutes).toFixed(1) : "—"} />
+      <Stat label="Decisions / min" value={minutes > 0 ? (decisions / minutes).toFixed(1) : '—'} />
       <Stat label="Judge-call rate" value={percent(judgeCalls, decisions)} />
       <Stat label="Grant hit rate" value={percent(grantHits, decisions)} />
       <Stat label="Median latency, grant hit" value={ms(median(grantMs))} />
@@ -64,11 +85,11 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function percent(part: number, whole: number): string {
-  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : "—";
+  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—';
 }
 
 function ms(value: number | null): string {
-  return value === null ? "—" : `${Math.round(value)} ms`;
+  return value === null ? '—' : `${Math.round(value)} ms`;
 }
 
 function median(values: number[]): number | null {
