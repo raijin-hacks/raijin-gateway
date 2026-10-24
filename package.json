@@ -1,9 +1,15 @@
 {
-  "name": "calhacks-13-0",
-  "version": "0.1.0",
+  "name": "agent-payment-firewall",
   "private": true,
-  "description": "Cal Hacks 13.0 project",
+  "packageManager": "pnpm@10.34.7",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "payments:wallets": "pnpm --filter @apf/gateway payments:wallets",
+    "payments:balance": "pnpm --filter @apf/gateway payments:balance",
+    "payments:pay-once": "pnpm --filter @apf/gateway payments:pay-once",
+    "merchants:pricescope": "pnpm --filter @apf/merchants start:pricescope",
+    "payments:test": "pnpm --filter @apf/gateway test"
   }
 }
