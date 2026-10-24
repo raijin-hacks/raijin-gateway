@@ -57,9 +57,10 @@ export function createMandate(deps: Deps): Handler<AppEnv> {
 
 export function closeMandate(deps: Deps): Handler<AppEnv, '/mandates/:id/close'> {
   const repo = createMandateRepo(deps.db);
-  return (c) => {
+  return async (c) => {
     const mandateId = c.req.param('id');
     if (!repo.close(mandateId)) return notFound(c);
+    await deps.pipeline?.sweep();
     deps.log.info('mandate closed', { mandate_id: mandateId });
     return c.json({ ok: true });
   };

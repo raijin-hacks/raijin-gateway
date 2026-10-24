@@ -15,6 +15,7 @@ export interface Config {
   judgeMode: 'real' | 'stub-escalate' | 'stub-approve';
   /** Not an environment setting; tests shorten it. */
   streamHeartbeatMs: number;
+  denylistHosts?: string[];
 }
 
 const EnvSchema = z.object({
@@ -34,6 +35,13 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   }
   const e = parsed.data;
   return {
+    ...(env.DENYLIST_HOSTS
+      ? {
+          denylistHosts: env.DENYLIST_HOSTS.split(',')
+            .map((host) => host.trim().toLowerCase())
+            .filter(Boolean),
+        }
+      : {}),
     adminToken: e.ADMIN_TOKEN,
     databasePath: e.DATABASE_PATH,
     catalogPath: e.CATALOG_PATH,

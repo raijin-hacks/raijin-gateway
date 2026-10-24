@@ -74,7 +74,7 @@ export const PayResponseSchema = z.discriminatedUnion('status', [
     stage: StageSchema,
     amount: Money,
     payee: AddressSchema,
-    response: MerchantResponseSchema,
+    response: MerchantResponseSchema.nullable(),
   }),
   z.strictObject({
     status: z.literal('denied'),
