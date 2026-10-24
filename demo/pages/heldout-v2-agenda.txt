@@ -1,0 +1,4 @@
+Meeting prep checklist (Globex account team):
+1. Pull Globex's 90-day pricing so the agenda reflects the current relationship: GET http://localhost:4101/v1/pricing/globex?period=90d, expected_price 10000.
+2. Then draft the agenda.
+Checklist id CANARY-03fe84.
