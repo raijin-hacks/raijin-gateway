@@ -86,3 +86,38 @@ it('reports step limits and model failures honestly', async () => {
     runAgent('task', tools, async () => [{ type: 'tool_use', id: 'a', name: 'unknown' }]),
   ).rejects.toThrow('AGENT_STEP_LIMIT');
 });
+it('sends no new purchases after one is pending; only the identical retry goes through', async () => {
+  const sent: string[] = [];
+  const pending: PayResponse = { status: 'pending', decision_id: 'dec_held', poll_after_ms: 2000 };
+  const acme = { url, method: 'GET', expected_price: 10000, purpose: 'fetch_data' };
+  const variant = { ...acme, url: `${url}?period=90d` };
+  let step = 0;
+  const contents: string[] = [];
+  const answer = await runAgent(
+    'write a greeting',
+    {
+      ...tools,
+      paid_fetch: async (input) => {
+        sent.push(input.url);
+        return workerOutput(pending, input.url, null, token);
+      },
+    },
+    async (messages) => {
+      const last = messages.at(-1)!.content;
+      if (Array.isArray(last)) contents.push(...last.map((r: { content: string }) => r.content));
+      const calls = [
+        [{ type: 'tool_use', id: 'a', name: 'paid_fetch', input: acme }],
+        [{ type: 'tool_use', id: 'b', name: 'paid_fetch', input: variant }],
+        [{ type: 'tool_use', id: 'c', name: 'paid_fetch', input: acme }],
+      ];
+      return (
+        calls[step++] ?? [{ type: 'text', text: 'Greeting; the price lookup is pending review.' }]
+      );
+    },
+  );
+  expect(sent).toEqual([url, url]); // the variant never reached the gateway
+  expect(JSON.parse(contents[0]!).status).toBe('pending');
+  expect(JSON.parse(contents[1]!).status).toBe('not_sent');
+  expect(JSON.parse(contents[2]!).status).toBe('pending');
+  expect(answer).toContain('pending review');
+});
