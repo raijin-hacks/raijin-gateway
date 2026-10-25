@@ -1394,16 +1394,50 @@ it('preserves a reserved liability when budget is reduced during human review', 
   expect(h.payments.pay).toHaveBeenCalledTimes(1);
 });
 
-it.fails(
-  'expired approvals must disappear on queue refresh without a worker poll (Chunk 2: routes/operators.ts does not sweep)',
-  async () => {
-    const h = await fixture(createStubJudge('stub-escalate'));
-    expect((await h.pay()).body.status).toBe('pending');
-    h.clock.advance(600001);
-    const queue = await h.request('/approvals?status=pending', ADMIN_TOKEN);
-    expect(await queue.json()).toEqual([]);
-  },
-);
+it('expired approvals disappear on queue refresh without a worker poll', async () => {
+  const h = await fixture(createStubJudge('stub-escalate'));
+  expect((await h.pay()).body.status).toBe('pending');
+  h.clock.advance(600001);
+  const queue = await h.request('/approvals?status=pending', ADMIN_TOKEN);
+  expect(queue.status).toBe(200);
+  expect(await queue.json()).toEqual([]);
+});
+
+it('a review exactly at its deadline is expired and cannot be approved', async () => {
+  const h = await fixture(createStubJudge('stub-escalate'));
+  const first = await h.pay();
+  const listed = (await (await h.request('/approvals?status=pending', ADMIN_TOKEN)).json()) as {
+    deadline: number;
+  }[];
+  expect(listed).toHaveLength(1);
+  h.clock.advance(listed[0]!.deadline - h.clock.now());
+  expect(await (await h.request('/approvals?status=pending', ADMIN_TOKEN)).json()).toEqual([]);
+  const refused = await h.review(first.body.decision_id);
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toEqual({ error: 'review_unavailable' });
+  expect(h.pipeline.replay(first.body.decision_id)).toMatchObject({
+    status: 'denied',
+    reasons: ['HUMAN_TIMEOUT'],
+  });
+  expect(h.money()).toEqual({ spent: 0, reserved: 0 });
+  expect(h.payments.pay).not.toHaveBeenCalled();
+});
+
+it('queue refresh releases an expired reservation once; a later approve cannot release it again', async () => {
+  const h = await fixture(createStubJudge('stub-escalate'));
+  const first = await h.pay();
+  expect(h.money()).toEqual({ spent: 0, reserved: 10000 });
+  h.clock.advance(600000);
+  const queue = await h.request('/approvals?status=pending', ADMIN_TOKEN);
+  expect(queue.status).toBe(200);
+  expect(await queue.json()).toEqual([]);
+  expect(h.money()).toEqual({ spent: 0, reserved: 0 });
+  expect(h.count('approvals')).toBe(1);
+  expect((await h.review(first.body.decision_id)).status).toBe(409);
+  expect(h.money()).toEqual({ spent: 0, reserved: 0 });
+  expect(h.count('approvals')).toBe(1);
+  expect(h.payments.pay).not.toHaveBeenCalled();
+});
 
 it('claims a human approval only once under concurrent admin submissions', async () => {
   const h = await fixture(createStubJudge('stub-escalate'));
