@@ -38,6 +38,9 @@ pnpm eval:heldout-v2:live
 # demo agent against a running mock gateway and pages server (see apps/agent/README.md)
 PAYMENTS_MODE=mock MANDATE_TOKEN='…' AGENT_TASK='…' AGENT_MODEL='…' \
   ANTHROPIC_API_KEY='…' pnpm agent:live
+
+# dashboard Worker lab (localhost :4010). Live panes need ANTHROPIC_API_KEY; compromised panes do not.
+ANTHROPIC_API_KEY='…' pnpm agent:lab
 ```
 
 Use a personal key only for the command itself. Don't save it in `.env` or paste it into issues or logs.

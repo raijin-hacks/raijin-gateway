@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { AgentSummary } from '@apf/contracts';
+import { rememberLabMandate } from '../lib/lab-session';
 import { rememberMandateTask } from '../lib/mandate-tasks';
 import { dollarsToAtomic } from '../lib/money';
 
@@ -90,6 +91,7 @@ export default function MandateForm() {
     setCopied(false);
     setActive([{ id: data.mandate_id, task: task.trim() }, ...active]);
     rememberMandateTask(data.mandate_id, task.trim());
+    rememberLabMandate({ id: data.mandate_id, token: data.token, task: task.trim() });
     // Clear the form for the next mandate
     setTask('');
     setSubjects([]);
