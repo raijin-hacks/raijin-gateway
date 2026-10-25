@@ -65,6 +65,8 @@ type Outcome =
   | 'settle'
   | 'settle_slowly'
   | '402'
+  | '402_settle_failed'
+  | '402_settlement_rejected'
   | '500'
   | '200_without_settlement_header'
   | 'settle_with_endless_body'
@@ -137,6 +139,25 @@ async function merchant(store: MemoryPaymentStore, paymentId: string, outcomes: 
         return res.end('{"company":"acme","products":[]}');
       case '402':
         res.writeHead(402, { 'Content-Type': 'application/json' });
+        return res.end('{}');
+      case '402_settle_failed':
+        res.writeHead(402, {
+          'PAYMENT-REQUIRED': encode({
+            x402Version: 2,
+            error: 'settle_failed <script>',
+            accepts: [],
+          }),
+        });
+        return res.end();
+      case '402_settlement_rejected':
+        res.writeHead(402, {
+          'Content-Type': 'application/json',
+          'PAYMENT-RESPONSE': encode({
+            success: false,
+            errorReason: 'transaction_failed',
+            transaction: '',
+          }),
+        });
         return res.end('{}');
       case '500':
         res.writeHead(500);
@@ -238,6 +259,32 @@ for (const outcome of ['402', '500', '200_without_settlement_header'] as const) 
     assert.equal(store.called('fail'), 0, 'pay() must never call store.fail');
   });
 }
+
+test('(a) a merchant refusal is logged with its status and a sanitized x402 error', async () => {
+  const { store, paymentId, payments, quote } = await setup(['402_settle_failed']);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
+    const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes(paymentId));
+    assert.ok(line, 'the refusal is logged');
+    assert.match(line, /merchant answered 402 .*error: settle_failed \?script\?/);
+    assert.equal((await store.get(paymentId))?.state, 'UNKNOWN');
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test('(a) a failed settlement is logged with the facilitator reason from PAYMENT-RESPONSE', async () => {
+  const { paymentId, payments, quote } = await setup(['402_settlement_rejected']);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    assert.deepEqual(await payments.pay(paymentId, quote), { state: 'UNKNOWN' });
+    const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes(paymentId));
+    assert.match(line ?? '', /merchant answered 402 .*error: transaction_failed/);
+  } finally {
+    warn.mockRestore();
+  }
+});
 
 // ---------- (b) a retry resends the same signed authorization ----------
 

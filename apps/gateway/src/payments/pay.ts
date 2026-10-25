@@ -186,6 +186,13 @@ export function createPay(
       content_type: res.headers.get('content-type') ?? '',
       body,
     };
+    if (res.status < 200 || res.status >= 300) {
+      // Usually the facilitator refused or failed to settle; its reason is the only clue.
+      console.warn(
+        `[payments] ${paymentId} UNKNOWN: merchant answered ${res.status} to the paid request` +
+          ` (${merchantError(res, body)})`,
+      );
+    }
     // Keep what was bought before deciding settlement: if the proof only comes later (through the
     // reconciler), the data must still be there to deliver. A save failure must not block settling.
     if (res.status >= 200 && res.status < 300) {
@@ -307,6 +314,34 @@ export function createPay(
       );
     }
   }
+}
+
+// The merchant's stated reason: x402 `errorReason` in PAYMENT-RESPONSE (a failed settlement),
+// else `error` in PAYMENT-REQUIRED (both base64 JSON) or a JSON body. Merchant-controlled, so it is
+// cut to a short run of plain characters before it reaches a log.
+function merchantError(res: Response, body: string): string {
+  const field = (source: string | null, decode: boolean, key: string): string | null => {
+    if (!source) return null;
+    try {
+      const value = (
+        JSON.parse(decode ? Buffer.from(source, 'base64').toString('utf8') : source) as Record<
+          string,
+          unknown
+        >
+      )[key];
+      return typeof value === 'string' && value.length > 0 ? value : null;
+    } catch {
+      // Not JSON: no reason here (logging only; the payment is already UNKNOWN).
+      return null;
+    }
+  };
+  const reason =
+    field(res.headers.get('PAYMENT-RESPONSE'), true, 'errorReason') ??
+    field(res.headers.get('PAYMENT-REQUIRED'), true, 'error') ??
+    field(body, false, 'error');
+  return reason
+    ? `error: ${reason.replace(/[^A-Za-z0-9 _.:-]/g, '?').slice(0, 120)}`
+    : 'no error given';
 }
 
 function describe(err: unknown, secrets: readonly string[] = []): string {
