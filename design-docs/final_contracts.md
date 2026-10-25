@@ -1,4 +1,4 @@
-# Agent Payment Firewall: Contracts v1.4
+# Raijin Gateway: Contracts v1.4
 
 v1.1: added `GET /catalog`, `PaymentStore`, `EndpointMatch`, `JudgeContext`; grant clamping moved to the gateway; `pay()` never marks a payment failed.
 

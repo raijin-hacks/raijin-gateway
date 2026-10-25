@@ -6,7 +6,7 @@ Due as a draft **Sat 11 PM**. Submission closes **Sun 9:00 AM**. Live judge numb
 
 ## Name
 
-Agent Payment Firewall
+Raijin Gateway
 
 ## Tagline
 

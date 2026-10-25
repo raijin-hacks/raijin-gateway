@@ -89,7 +89,7 @@ The gateway's `PAYMENTS_MODE` decides how payments settle; the worker has no say
 
 Show the dashboard with empty **Decisions** and **Payments** panels.
 
-> "Agents now pay for APIs on their own. Caps check how much, and allowlists check who. Nobody checks *why*. This is a payment firewall that checks every payment against the task a human gave the agent, before anything is signed."
+> "Agents now pay for APIs on their own. Caps check how much, and allowlists check who. Nobody checks *why*. This is Raijin Gateway: it checks every payment against the task a human gave the agent, before anything is signed."
 
 ### 2 · Mandate (0:15–0:30)
 

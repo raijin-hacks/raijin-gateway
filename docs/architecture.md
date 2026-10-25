@@ -1,6 +1,6 @@
 # how the system fits together
 
-The Agent Payment Firewall sits between an AI agent and its money. A human creates a **mandate** (a task, a budget, an expiry); the agent gets only a token for that mandate. When the agent wants to pay for an API call, it asks the gateway, and the gateway applies catalog/selection checks, hard rules and task-judge or review policy before signing. The current mandate is not an immutable operation/quantity plan; the missing authority fields are documented in [judge advisories](judge-advisories.md).
+Raijin Gateway sits between an AI agent and its money. A human creates a **mandate** (a task, a budget, an expiry); the agent gets only a token for that mandate. When the agent wants to pay for an API call, it asks the gateway, and the gateway applies catalog/selection checks, hard rules and task-judge or review policy before signing. The current mandate is not an immutable operation/quantity plan; the missing authority fields are documented in [judge advisories](judge-advisories.md).
 
 ## The parts
 

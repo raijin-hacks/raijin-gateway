@@ -1,10 +1,10 @@
-# Agent Payment Firewall: Hackathon Design
+# Raijin Gateway: Hackathon Design
 
 Oct 23, 2026 · @Allan
 
 ## Summary
 
-**Pitch:** a payment firewall for AI agents that checks *why* an agent is paying, against the task a human gave it, before anything is signed. We assume the agent will be injected, and guarantee the injection can't spend beyond the task.
+**Pitch:** Raijin Gateway is a payment firewall for AI agents that checks *why* an agent is paying, against the task a human gave it, before anything is signed. We assume the agent will be injected, and guarantee the injection can't spend beyond the task.
 
 **Verdict:** worth building, scored 68/100, but only if the four commitments below hold. Without them the project reads as "spending caps plus an LLM wrapper," which already exists from Coinbase, Ramp and Mercury.
 
