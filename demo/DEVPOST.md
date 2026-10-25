@@ -87,7 +87,10 @@ All on Base Sepolia, a test network whose USDC has no cash value:
 
 ## Challenges we ran into
 
-- [Fill in from the team.] Candidates: getting the first x402 payment to settle, keeping attacker text out of the judge while still giving it enough to decide, and judge-only attacks that kept getting caught by the rules.
+- The judge has to decide task-relevance without reading the page, the URL, or the merchant's 402 text. Too little signal and it cannot tell a needed lookup from an off-task one; too much and it can be injected. Most attacks we wrote for it never reached it: unknown hosts, secrets in URLs, and unselected merchants die at pre-contact.
+- The first on-chain settle failed because the public x402.org facilitator hit a nonce collision on its gas wallet, not because our signer was wrong. A retry landed. That is why an ambiguous outcome stays `UNKNOWN` with funds reserved, not a clean fail.
+- CDP allows a signing operation that has no rules. Our first policy still signed `signHash` and `signMessage`. We had to reject every other route explicitly, then prove the runtime key cannot edit or detach that policy.
+- A live model often refuses the poisoned page, so a demo that waits for bait-taking never shows the firewall. We added a labeled compromised worker that always sends the same cataloged purchase, and we measure that path.
 
 ## What we're proud of
 
@@ -114,13 +117,6 @@ Policies set per tenant, the egress sandbox for deployed agents, batched settlem
 ## How we used generative AI
 
 Claude is the task judge on the payment path and the live demo agent. Both call the Anthropic API with native `fetch`, not the SDK. A plan drafter and an escalation explainer were built as **advisory interfaces** (`docs/judge-advisories.md`) with a local CLI; they are not in the dashboard or the `/pay` pipeline. Do not claim they run in the product.
-
-## Tracks
-
-- [ ] Coinbase: x402 payments, with a CDP server account and signing policy
-- [ ] Best Security Hack
-- [ ] Microsoft: customer understanding, responsible design, and measured evidence (Azure is not in the repo; do not pitch hosting)
-- [ ] Anthropic: if its track is open and rewards agent safety
 
 ## Built with
 
