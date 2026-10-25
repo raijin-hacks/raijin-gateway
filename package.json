@@ -29,6 +29,7 @@
     "trust:rehearse": "vitest run apps/agent/src/trust-rehearsal.test.ts --reporter=verbose --silent=false",
     "agent:rehearse": "vitest run --project agent",
     "agent:live": "node --import tsx apps/agent/src/live.ts",
+    "agent:lab": "node --import tsx apps/agent/src/serve.ts",
     "eval:v13:offline": "node --import tsx eval/supplemental/v1.3-v1/cli.ts",
     "eval:v13:live": "node --import tsx eval/supplemental/v1.3-v1/cli.ts --live",
     "eval:heldout-v2:offline": "node --import tsx eval/cases/heldout-v2/run.ts",

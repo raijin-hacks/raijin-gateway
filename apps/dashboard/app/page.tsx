@@ -5,6 +5,7 @@ import LogoutButton from './logout-button';
 import MandateForm from './mandate-form';
 import PaymentsPanel from './payments-panel';
 import StatsHeader from './stats-header';
+import WorkerLab from './worker-lab';
 
 // Show actionable restriction state; the historical score graph remains hidden.
 export default function Home() {
@@ -16,6 +17,7 @@ export default function Home() {
       </header>
       <StatsHeader />
       <MandateForm />
+      <WorkerLab />
       <AgentRestrictions />
       <ApprovalQueue />
       <PaymentsPanel />
