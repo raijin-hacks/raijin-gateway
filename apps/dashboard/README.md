@@ -1,6 +1,6 @@
 # Dashboard (Chunk 4)
 
-Live view of the Agent Payment Firewall: create mandates, watch every decision, answer escalations, and follow each payment to its settlement. Next.js, on `http://localhost:3000`.
+Live view of Raijin Gateway: create mandates, watch every decision, answer escalations, and follow each payment to its settlement. Next.js, on `http://localhost:3000`.
 
 The browser only ever talks to this app's own `/api/*` routes. They call the gateway with `ADMIN_TOKEN` on the server, so the token never reaches the browser.
 

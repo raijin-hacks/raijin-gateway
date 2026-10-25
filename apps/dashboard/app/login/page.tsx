@@ -34,7 +34,7 @@ export default function LoginPage() {
         onSubmit={submit}
         className="w-full max-w-sm space-y-3 rounded border border-gray-700 p-4"
       >
-        <h1 className="text-lg font-semibold">Agent Payment Firewall</h1>
+        <h1 className="text-lg font-semibold">Raijin Gateway</h1>
         <p className="text-sm text-gray-400">Operator sign-in</p>
         <input
           type="password"

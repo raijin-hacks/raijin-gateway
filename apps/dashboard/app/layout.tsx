@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Agent Payment Firewall',
+  title: 'Raijin Gateway',
   description: 'Live decisions, approvals and trust for agent payments',
 };
 

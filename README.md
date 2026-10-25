@@ -1,8 +1,8 @@
-# Agent Payment Firewall
+# Raijin Gateway
 
 Spending caps check how much an AI agent pays. This gateway checks *why*.
 
-AI agents can now pay for APIs on their own over [x402](https://x402.org): the API answers `402 Payment Required` with a price, and the agent signs a USDC payment. Caps and allowlists check the amount and the payee. They don't check whether the purchase serves the task the agent was given, so a prompt-injected agent making a small purchase from an approved vendor gets through. Agent Payment Firewall sits between the agent and its money, and checks every payment against the human's task before anything is signed.
+AI agents can now pay for APIs on their own over [x402](https://x402.org): the API answers `402 Payment Required` with a price, and the agent signs a USDC payment. Caps and allowlists check the amount and the payee. They don't check whether the purchase serves the task the agent was given, so a prompt-injected agent making a small purchase from an approved vendor gets through. Raijin Gateway sits between the agent and its money, and checks every payment against the human's task before anything is signed.
 
 Built at Cal Hacks 13.0. Testnet only (USDC on Base Sepolia).
 
