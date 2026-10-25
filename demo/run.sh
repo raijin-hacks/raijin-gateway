@@ -7,14 +7,20 @@
 #   demo/run.sh by-hand      sends the headline purchase directly (beat 4 fallback)
 #
 # The Anthropic key comes from ANTHROPIC_API_KEY if set, else the repo-root .env. Override the
-# model with AGENT_MODEL=... Each run keeps its own purchase journal, so runs can overlap.
+# model with AGENT_MODEL=..., and a mandate with RESEARCH_TOKEN=... or GREETING_TOKEN=... (e.g. one
+# created live in the dashboard). Each run keeps its own purchase journal, so runs can overlap.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOKENS="$ROOT/demo/.run/tokens.env"
 [ -f "$TOKENS" ] || { echo "no mandates yet: run demo/reset.sh first"; exit 1; }
+# A token given on the command line (a mandate created live in the dashboard) wins over the saved one.
+GIVEN_RESEARCH="${RESEARCH_TOKEN:-}"
+GIVEN_GREETING="${GREETING_TOKEN:-}"
 # shellcheck disable=SC1090
 source "$TOKENS"
+RESEARCH_TOKEN="${GIVEN_RESEARCH:-$RESEARCH_TOKEN}"
+GREETING_TOKEN="${GIVEN_GREETING:-$GREETING_TOKEN}"
 cd "$ROOT"
 
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then

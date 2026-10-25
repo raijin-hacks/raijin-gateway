@@ -29,6 +29,18 @@ It never overwrites a file that exists. Both files are gitignored and readable o
 
 > **iCloud warning (macOS):** if Desktop and Documents sync to iCloud, clone somewhere else (e.g. `~/code`). iCloud makes `name 2` copies and can offload files the tests need.
 
+## Sharing keys
+
+You don't need anyone else's `.env` or `.env.local`. `demo/setup.sh` makes your own: your own `ADMIN_TOKEN` and dashboard password, which only matter on your laptop. Never copy someone's whole `.env`; it holds their wallet keys.
+
+| Key | Who needs it | How to get it |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Everyone | Your own key, or the team key from the team's password manager |
+| CDP runtime keys (`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`) | Only the laptop presenting with real payments | From the payments owner through a password-manager share (1Password, or Bitwarden Send set to expire after one view). Paste them into your `.env`. |
+| CDP admin key | Nobody else | Stays in `.env.admin` on the payments owner's laptop |
+
+Never send keys through Slack, Discord, email, a screenshot or git. Rotate the CDP keys after the event.
+
 ## Every run
 
 ```bash
