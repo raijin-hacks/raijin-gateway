@@ -57,6 +57,8 @@ demo/run.sh live              # beat 7: after editing demo/pages/live.txt
 demo/stop.sh                  # stop all four servers
 ```
 
+Each `demo/run.sh` starts with a fresh purchase journal, so a rerun makes new purchases and new dashboard rows. If an agent run crashed mid-purchase, rerun it with `RESUME=1 demo/run.sh <run>` to settle what it started instead of buying again.
+
 `demo/reset.sh` is safe to rerun any time. It moves the old database, logs and tokens to `demo/.run/old/` instead of deleting them. Mandates last 2 hours; run it again after that.
 
 ## What you should see

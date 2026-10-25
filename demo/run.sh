@@ -8,7 +8,8 @@
 #
 # The Anthropic key comes from ANTHROPIC_API_KEY if set, else the repo-root .env. Override the
 # model with AGENT_MODEL=..., and a mandate with RESEARCH_TOKEN=... or GREETING_TOKEN=... (e.g. one
-# created live in the dashboard). Each run keeps its own purchase journal, so runs can overlap.
+# created live in the dashboard). Each run keeps its own purchase journal, so runs can overlap,
+# and starts it fresh unless RESUME=1.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -50,6 +51,16 @@ case "${1:-}" in
 esac
 
 [ -n "$ANTHROPIC_API_KEY" ] || { echo "ANTHROPIC_API_KEY is not set and not in .env"; exit 1; }
+
+# The journal makes an identical purchase reuse its key, so a rerun gets the earlier decisions back
+# and the dashboard shows nothing new. Each run starts fresh unless RESUME=1 (after a crash, to
+# settle what that run already started instead of buying again). The old journal is kept.
+JOURNAL=".agent-state/$1.json"
+if [ "${RESUME:-}" != 1 ] && [ -f "$JOURNAL" ]; then
+  mkdir -p demo/.run/old
+  mv "$JOURNAL" "demo/.run/old/journal-$1-$(date +%Y%m%d-%H%M%S).json"
+fi
+
 echo "agent model: $MODEL"
-MANDATE_TOKEN="$TOKEN" AGENT_TASK="$TASK" AGENT_MODEL="$MODEL" AGENT_JOURNAL_PATH=".agent-state/$1.json" \
+MANDATE_TOKEN="$TOKEN" AGENT_TASK="$TASK" AGENT_MODEL="$MODEL" AGENT_JOURNAL_PATH="$JOURNAL" \
   pnpm --silent agent:live
