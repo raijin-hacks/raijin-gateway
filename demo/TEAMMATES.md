@@ -47,7 +47,7 @@ Never send keys through Slack, Discord, email, a screenshot or git. Rotate the C
 demo/reset.sh                 # fresh stack: stops old servers, new database, both mandates created
 ```
 
-Open **http://localhost:3000**, sign in with your dashboard password, then in a terminal:
+Open **http://localhost:3000** and sign in with your dashboard password. The dashboard's **Worker lab** runs the agents: a live model on the left pane, and a labeled **Compromised** profile on the right that always sends the page's intended purchase, so the firewall shows even when the live model refuses the bait. Creating a mandate in the dashboard loads it into the lab. The same runs from a terminal:
 
 ```bash
 demo/run.sh research          # beat 3: Sonnet buys five price lookups
@@ -56,7 +56,7 @@ demo/run.sh by-hand           # beat 4 fallback, if Haiku refuses the bait
 demo/run.sh live              # beat 7: after editing demo/pages/live.txt
 demo/run.sh bulk-vs-research  # Q&A: the same $0.50 export, denied for research, approved for bulk
 demo/run.sh restore pricing   # put an agent back to normal after an incident
-demo/stop.sh                  # stop all four servers
+demo/stop.sh                  # stop all five servers
 ```
 
 Each `demo/run.sh` starts with a fresh purchase journal, so a rerun makes new purchases and new dashboard rows. If an agent run crashed mid-purchase, rerun it with `RESUME=1 demo/run.sh <run>` to settle what it started instead of buying again.
@@ -102,4 +102,4 @@ About 1 in 5 real payments comes back `payment_unknown`: the public test facilit
 | `<name> did not start` | Read `demo/.run/<name>.log`. A port may be held by another program: `lsof -i :4000`. |
 | Port already in use | `demo/stop.sh`, then `demo/reset.sh`. |
 
-Logs for all four servers are in `demo/.run/*.log`. The full stage script is in [`SCRIPT.md`](SCRIPT.md).
+Logs for all five servers (dashboard, gateway, agent lab, PriceScope, attacker pages) are in `demo/.run/*.log`. The full stage script is in [`SCRIPT.md`](SCRIPT.md).

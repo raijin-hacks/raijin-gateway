@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fresh demo stack in one command: stops the four servers, starts them on a new database, and
+# Fresh demo stack in one command: stops the five servers, starts them on a new database, and
 # creates the research and greeting mandates. Then run agents with demo/run.sh.
 #
 #   demo/reset.sh            mock payments (no CDP or USDC needed; say "mock" on stage)
@@ -20,14 +20,16 @@ ADMIN_TOKEN="$(grep -E '^ADMIN_TOKEN=' .env | tail -1 | cut -d= -f2- | tr -d "\"
 [ -n "$ADMIN_TOKEN" ] || { echo "ADMIN_TOKEN is empty in .env"; exit 1; }
 [ -f apps/dashboard/.env.local ] || echo "warning: apps/dashboard/.env.local is missing; the dashboard won't reach the gateway"
 
+# Dashboard, gateway, agent lab (Worker lab), PriceScope, attacker pages.
+PORTS="3000 4000 4010 4101 4199"
 echo "== stopping old servers"
-for port in 3000 4000 4101 4199; do
+for port in $PORTS; do
   pids="$(lsof -ti "tcp:$port" -sTCP:LISTEN || true)"
   [ -n "$pids" ] && kill $pids 2>/dev/null || true
 done
 for _ in $(seq 1 20); do
   busy=0
-  for port in 3000 4000 4101 4199; do lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null && busy=1; done
+  for port in $PORTS; do lsof -ti "tcp:$port" -sTCP:LISTEN >/dev/null && busy=1; done
   [ $busy = 0 ] && break
   sleep 0.5
 done
@@ -47,6 +49,9 @@ fi
 nohup pnpm merchants:pricescope </dev/null >"$RUN/pricescope.log" 2>&1 &
 nohup pnpm merchants:attacker </dev/null >"$RUN/attacker.log" 2>&1 &
 (cd apps/dashboard && nohup pnpm dev </dev/null >"$RUN/dashboard.log" 2>&1 &)
+# The agent lab's live panes call the model with the same key as the judge.
+LAB_KEY="$(grep -E '^ANTHROPIC_API_KEY=' .env | tail -1 | cut -d= -f2- | tr -d "\"'")"
+ANTHROPIC_API_KEY="$LAB_KEY" nohup pnpm agent:lab </dev/null >"$RUN/agent-lab.log" 2>&1 &
 
 wait_for() { # url, name
   for _ in $(seq 1 60); do
@@ -61,6 +66,7 @@ wait_for http://localhost:4000/health gateway
 wait_for "http://localhost:4101/v1/pricing/acme?period=30d" pricescope
 wait_for http://localhost:4199/pages/demo attacker
 wait_for http://localhost:3000/login dashboard
+wait_for http://127.0.0.1:4010/health agent-lab
 curl -s -m 5 -X POST http://localhost:4101/_control -H 'content-type: application/json' -d '{"mode":"normal"}' >/dev/null
 
 echo "== creating mandates"
@@ -82,12 +88,12 @@ printf "RESEARCH_TOKEN='%s'\nGREETING_TOKEN='%s'\nBULK_TOKEN='%s'\nPAYMENTS_MODE
 cat <<EOF
 
 Ready ($MODE payments, fresh database, mandates valid for 2 hours).
-  Dashboard:  http://localhost:3000  (reload it, then sign in)
+  Dashboard:  http://localhost:3000  (reload it, then sign in; Worker lab runs the agents)
   Logs:       demo/.run/*.log
 Next:
   demo/run.sh research     beat 3, Sonnet
   demo/run.sh greeting     beat 4, Haiku (if it refuses the bait: demo/run.sh by-hand)
   demo/run.sh live         beat 7, after editing demo/pages/live.txt
   demo/run.sh bulk-vs-research   Q&A: the same \$0.50 export, two roles
-  demo/stop.sh             stop all four servers
+  demo/stop.sh             stop all five servers
 EOF

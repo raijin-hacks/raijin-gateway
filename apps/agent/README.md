@@ -28,6 +28,13 @@ response, and after settlement before delivery; concurrent resumes; a 409 key
 conflict; and a corrupt journal. Each case asserts one payment and one signature.
 Gateway-side recovery (A18) remains the payments and gateway owners' responsibility.
 
+The dashboard Worker lab starts workers through `pnpm agent:lab` (localhost `:4010`).
+Live panes still use `runAgent` and the standing untrusted-tool-results line.
+The compromised profile reads the selected page, then `paid_fetch`s that page's
+intended purchase from `demo/pages/manifest.json`. It does not parse the page into
+a URL. Each lab run gets its own journal, so a second click is a new `/pay` with
+the same purchase hash.
+
 For an explicit credentialed live model run, first arrange a separately provisioned
 MOCK gateway and the attacker pages server (`pnpm merchants:attacker`, which serves
 `demo/pages/*.txt` and the variant pages). Set the once-issued mandate token and task

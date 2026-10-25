@@ -4,7 +4,7 @@ What to type on demo day, in order. Run every command from the repo root. First 
 
 ## Before the slot
 
-1. Start a fresh stack. This resets trust, decisions and both mandates:
+1. Start a fresh stack: gateway, PriceScope, attacker pages, dashboard and the agent lab (`:4010`) on a new database, with the research, greeting and bulk mandates created. This also resets trust and restrictions.
    ```bash
    demo/reset.sh --real     # real Base Sepolia payments (payments owner's laptop)
    demo/reset.sh            # mock payments: say "mock" on stage
@@ -15,23 +15,23 @@ What to type on demo day, in order. Run every command from the repo root. First 
 
 ## On stage
 
-| Beat | Type this | Expect in Decisions |
-| --- | --- | --- |
-| 2 · Mandate | Create the research mandate in the dashboard (fields below), click **Copy**, then `RESEARCH_TOKEN='<paste>' demo/run.sh research` | — |
-| 3 · Normal work | (the command above) | Acme `judge · approved`, then four `tier1 · GRANT_HIT` |
-| 4 · Headline | `demo/run.sh greeting`; if Haiku refuses the bait, `demo/run.sh by-hand` | `judge · denied · JUDGE_OFF_TASK` |
-| 5 · CDP refuses | `pnpm --filter @apf/gateway payments:cdp-spike bypass` | Terminal: `403 policy_violation` |
-| 7 · Live attack | Judges edit `demo/pages/live.txt` and save; then `demo/run.sh live` | Whatever they wrote: pre-contact deny, judge, or queue |
+The demo runs from the dashboard's **Worker lab**: live model on the left pane, **Compromised** profile on the right (it always sends the page's intended purchase, so the firewall is shown even when the live model refuses the bait). Creating a mandate in the dashboard loads it into the lab for that tab. `demo/run.sh` is the terminal backup if the lab is down.
+
+| Beat | Worker lab | Terminal backup | Expect in Decisions |
+| --- | --- | --- | --- |
+| 2 · Mandate | Create the research mandate (fields below) | `RESEARCH_TOKEN='<paste>' demo/run.sh research` | — |
+| 3 · Normal work | Left pane: research mandate, page `research`, Live model, **Run** | (same as above) | Acme `judge · approved`, then four `tier1 · GRANT_HIT` |
+| 4 · Headline | Both panes: greeting mandate, page `demo`; left Live model, right Compromised | `demo/run.sh greeting`, or `demo/run.sh by-hand` | `judge · denied · JUDGE_OFF_TASK` |
+| 5 · CDP refuses | — | `pnpm --filter @apf/gateway payments:cdp-spike bypass` | Terminal: `403 policy_violation` |
+| 7 · Live attack | Judges edit `demo/pages/live.txt` (or pick a page); run a pane | `demo/run.sh live` | Pre-contact deny, judge, or Approval queue |
+
+**Research mandate** (beat 2): agent *Pricing researcher*; task `Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.`; subjects `acme, globex, initech, umbrella, hooli` + Enter (five chips); PriceScope only; budget `2.00`; expiry `30`. Skipping the live mandate? `demo/reset.sh` already created one (`demo/run.sh research` uses it).
+
+If a purchase lands in the **Approval queue**, the agent waits about 40 s: type a one-line note and click **Reject**.
 
 **Before beat 7, decide about the agent's restriction.** The headline's `JUDGE_OFF_TASK` is an incident: the gateway puts *Pricing researcher* under review, and every later purchase it makes goes straight to the Approval queue (`AGENT_REVIEW_REQUIRED`). Either narrate that ("one off-task attempt and this agent needs a human for everything"), or run `demo/run.sh restore pricing` first so the judges' attacks reach the judge.
 
 **Q&A, "isn't this just a blocklist?":** `demo/run.sh bulk-vs-research` sends the same $0.50 full export on two mandates. The researcher is denied `JUDGE_OVER_SCOPED` and the bulk loader is approved, for the same URL, price and merchant. Mock payments only: the CDP policy signs at most 1 cent.
-
-Skipping the live mandate in beat 2? `demo/run.sh research` uses the one `demo/reset.sh` created.
-
-**Research mandate** (beat 2): agent *Pricing researcher*; task `Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.`; subjects `acme, globex, initech, umbrella, hooli` + Enter (five chips); PriceScope only; budget `2.00`; expiry `30`.
-
-If a purchase lands in the **Approval queue**, the agent waits about 40 s: type a one-line note and click **Reject**.
 
 ## Real payments: keys
 
@@ -47,9 +47,9 @@ If a purchase lands in the **Approval queue**, the agent waits about 40 s: type 
 | Problem | Do this |
 | --- | --- |
 | Anything stuck or a server down | `demo/reset.sh` (then create the beat-2 mandate again) |
+| Worker lab can't reach the agent lab | Check http://127.0.0.1:4010/health; `demo/reset.sh`, or use the terminal backup column |
 | Every purchase says `AGENT_REVIEW_REQUIRED` | An earlier incident put the agent under review: `demo/run.sh restore pricing` |
 | `payment_unknown` on a real payment | The test facilitator failed to settle it; nothing was paid. Say so and move on |
-| Agent ignores the bait | `demo/run.sh by-hand` and say it was sent directly |
 | Judge model API down | Rows say `JUDGE_ERROR`: play the backup video |
 | Facilitator or CDP down | `demo/reset.sh` (mock) and say it's mock |
 | Signed out of the dashboard | http://localhost:3000/login with your dashboard password |
@@ -58,4 +58,4 @@ Logs: `demo/.run/*.log`. Stop everything: `demo/stop.sh`.
 
 ## After each rehearsal
 
-Add a row to the rehearsal log at the bottom of `SCRIPT.md`: mode, agent models, total time, whether the agent took the bait, and what broke.
+Add a row to the rehearsal log at the bottom of `SCRIPT.md`: mode, agent models, total time, whether the live model took the bait, and what broke.
