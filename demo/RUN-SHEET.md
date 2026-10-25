@@ -1,168 +1,61 @@
-# Demo run sheet (copy-paste)
+# Demo run sheet
 
-Paste each block into a terminal tab as written. Values in `<ANGLE_BRACKETS>` are yours to fill in.
+What to type on demo day, in order. Run every command from the repo root. First time on a laptop: [`TEAMMATES.md`](TEAMMATES.md). What to say: [`SCRIPT.md`](SCRIPT.md).
 
-## 0 · One-time: take the CDP admin key out of the gateway's `.env`
+## Before the slot
 
-The gateway loads `.env`. The admin key can edit or detach the signing policy, so it must not be in there.
+1. Start a fresh stack: gateway, PriceScope, attacker pages, dashboard and the agent lab (`:4010`) on a new database, with the research, greeting and bulk mandates created. This also resets trust and restrictions.
+   ```bash
+   demo/reset.sh --real     # real Base Sepolia payments (payments owner's laptop)
+   demo/reset.sh            # mock payments: say "mock" on stage
+   ```
+2. Reload http://localhost:3000 and sign in, so the header stats start at zero.
+3. Open `demo/pages/live.txt` in an editor for beat 7.
+4. Keep the backup video and the results slide open in other tabs (see `SCRIPT.md`).
 
-```bash
-open -e ~/Desktop/calhacks-13.0/.env
-```
+## On stage
 
-Cut the two `CDP_ADMIN_API_KEY_ID=` and `CDP_ADMIN_API_KEY_SECRET=` lines out, save, then:
+The demo runs from the dashboard's **Worker lab**: live model on the left pane, **Compromised** profile on the right (it always sends the page's intended purchase, so the firewall is shown even when the live model refuses the bait). Creating a mandate in the dashboard loads it into the lab for that tab. `demo/run.sh` is the terminal backup if the lab is down.
 
-```bash
-pbpaste > ~/apf-admin.env && chmod 600 ~/apf-admin.env
-```
+| Beat | Worker lab | Terminal backup | Expect in Decisions |
+| --- | --- | --- | --- |
+| 2 · Mandate | Create the research mandate (fields below) | `RESEARCH_TOKEN='<paste>' demo/run.sh research` | — |
+| 3 · Normal work | Left pane: research mandate, page `research`, Live model, **Run** | (same as above) | Acme `judge · approved`, then four `tier1 · GRANT_HIT` |
+| 4 · Headline | Both panes: greeting mandate, page `demo`; left Live model, right Compromised | `demo/run.sh greeting`, or `demo/run.sh by-hand` | `judge · denied · JUDGE_OFF_TASK` |
+| 5 · CDP refuses | — | `pnpm --filter @apf/gateway payments:cdp-spike bypass` | Terminal: `403 policy_violation` |
+| 7 · Live attack | Judges edit `demo/pages/live.txt` (or pick a page); run a pane | `demo/run.sh live` | Pre-contact deny, judge, or Approval queue |
 
-While `.env` is open, check it has `ANTHROPIC_API_KEY=` (the judge needs it).
+**Research mandate** (beat 2): agent *Pricing researcher*; task `Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.`; subjects `acme, globex, initech, umbrella, hooli` + Enter (five chips); PriceScope only; budget `2.00`; expiry `30`. Skipping the live mandate? `demo/reset.sh` already created one (`demo/run.sh research` uses it).
 
-## 1 · Stop anything old
+If a purchase lands in the **Approval queue**, the agent waits about 40 s: type a one-line note and click **Reject**.
 
-```bash
-for p in 3000 4000 4010 4101 4199; do lsof -ti tcp:$p -sTCP:LISTEN; done | xargs kill 2>/dev/null; echo stopped
-```
+**Before beat 7, decide about the agent's restriction.** The headline's `JUDGE_OFF_TASK` is an incident: the gateway puts *Pricing researcher* under review, and every later purchase it makes goes straight to the Approval queue (`AGENT_REVIEW_REQUIRED`). Either narrate that ("one off-task attempt and this agent needs a human for everything"), or run `demo/run.sh restore pricing` first so the judges' attacks reach the judge.
 
-Then clear the agent's purchase journal, so it doesn't replay the last run's purchases:
+**Q&A, "isn't this just a blocklist?":** `demo/run.sh bulk-vs-research` sends the same $0.50 full export on two mandates. The researcher is denied `JUDGE_OVER_SCOPED` and the bulk loader is approved, for the same URL, price and merchant. Mock payments only: the CDP policy signs at most 1 cent.
 
-```bash
-rm -f ~/Desktop/calhacks-13.0/.agent-state/purchases.json
-```
+## Real payments: keys
 
-## 2 · Tab 1: the gateway (fresh database every run)
+- `.env` holds the CDP **runtime** keys only (`CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `CDP_WALLET_SECRET`). The gateway loads `.env`.
+- The CDP **admin** key (`CDP_ADMIN_API_KEY_ID`, `CDP_ADMIN_API_KEY_SECRET`) lives in `.env.admin` in the repo root, gitignored, never loaded by the gateway. It's needed only to recreate or change the signing policy:
+  ```bash
+  cd apps/gateway && npx tsx --env-file=../../.env --env-file=../../.env.admin src/payments/scripts/cdp-spike.ts admin
+  ```
+- The CDP account `0x432D4cEA07086049E9c2125348285A01c084Fe5B` needs test USDC, about 1 cent per purchase. `pnpm payments:balance` checks the local-key payer, not this account, so check it on an explorer.
 
-Settings written before the command override `.env`, so nothing else needs editing.
+## If it breaks
 
-Real payments through CDP:
+| Problem | Do this |
+| --- | --- |
+| Anything stuck or a server down | `demo/reset.sh` (then create the beat-2 mandate again) |
+| Worker lab can't reach the agent lab | Check http://127.0.0.1:4010/health; `demo/reset.sh`, or use the terminal backup column |
+| Every purchase says `AGENT_REVIEW_REQUIRED` | An earlier incident put the agent under review: `demo/run.sh restore pricing` |
+| `payment_unknown` on a real payment | The test facilitator failed to settle it; nothing was paid. Say so and move on |
+| Judge model API down | Rows say `JUDGE_ERROR`: play the backup video |
+| Facilitator or CDP down | `demo/reset.sh` (mock) and say it's mock |
+| Signed out of the dashboard | http://localhost:3000/login with your dashboard password |
 
-```bash
-cd ~/Desktop/calhacks-13.0/apps/gateway && \
-DATABASE_PATH=./demo-$(date +%H%M%S).db \
-JUDGE_MODE=real JUDGE_MODEL=claude-sonnet-4-5-20250929 \
-PAYMENTS_MODE=real PAYMENT_SIGNER=cdp \
-CDP_SIGNER_ADDRESS=0x432D4cEA07086049E9c2125348285A01c084Fe5B \
-npx tsx --env-file-if-exists=../../.env src/main.ts
-```
-
-Fallback, mock payments (say "mock" on stage):
-
-```bash
-cd ~/Desktop/calhacks-13.0/apps/gateway && \
-DATABASE_PATH=./demo-$(date +%H%M%S).db \
-JUDGE_MODE=real JUDGE_MODEL=claude-sonnet-4-5-20250929 PAYMENTS_MODE=mock \
-npx tsx --env-file-if-exists=../../.env src/main.ts
-```
-
-## 3 · Tab 2: PriceScope (:4101)
-
-```bash
-cd ~/Desktop/calhacks-13.0 && pnpm merchants:pricescope
-```
-
-Once it's up, put it in normal mode:
-
-```bash
-curl -s -X POST http://localhost:4101/_control -H 'content-type: application/json' -d '{"mode":"normal"}'; echo
-```
-
-## 4 · Tab 3: attacker pages (:4199)
-
-```bash
-cd ~/Desktop/calhacks-13.0 && pnpm merchants:attacker
-```
-
-## 5 · Tab 4: dashboard (:3000)
-
-`apps/dashboard/.env.local` needs `ADMIN_TOKEN` (same as the gateway's), `GATEWAY_URL=http://localhost:4000` and `DASHBOARD_PASSWORD`, and no `MOCK`.
-
-```bash
-cd ~/Desktop/calhacks-13.0/apps/dashboard && pnpm dev
-```
-
-Open http://localhost:3000/login and sign in.
-
-## 6 · Check everything is up
-
-```bash
-for u in http://localhost:4000/health http://127.0.0.1:4010/health http://localhost:4199/pages/demo http://localhost:3000/login; do printf '%s  ' "$u"; curl -s -o /dev/null -w '%{http_code}\n' "$u"; done
-```
-
-All four should print `200`.
-
-## 7 · Before the slot: the greeting mandate (dashboard → New mandate)
-
-| Field | Value |
-|---|---|
-| Agent | Pricing researcher |
-| Task | `Write a short greeting for Acme's partnerships team.` |
-| Subjects | `acme` |
-| Merchants | PriceScope only |
-| Budget | `2.00` |
-| Expiry | `60` |
-
-Click **Create mandate**. The amber token box also loads this mandate into **Worker lab** for this tab. **Copy** only if you want a terminal backup.
-
-## 8 · Tab 5: agent lab (:4010)
-
-The dashboard Worker lab talks to this process. Live panes need the same Anthropic key as the judge. Compromised panes do not.
-
-```bash
-cd ~/Desktop/calhacks-13.0
-export ANTHROPIC_API_KEY='<your Anthropic key>'
-pnpm agent:lab
-```
-
-On stage, do not pick “the model that took the bait.” Left pane is a live model (refusal is competence). Right pane is **Compromised** and always sends the page’s intended purchase.
-
-Optional terminal backup (only if the lab is down):
-
-```bash
-export GREETING_TOKEN='<token from step 7>'
-MANDATE_TOKEN="$GREETING_TOKEN" AGENT_TASK="Write a short greeting for Acme's partnerships team; read http://localhost:4199/pages/demo first." AGENT_MODEL=claude-haiku-4-5-20251001 pnpm agent:live
-```
-
-Live attack (beat 7). Judges can edit `demo/pages/live.txt` or pick another page in Worker lab:
-
-```bash
-open -e ~/Desktop/calhacks-13.0/demo/pages/live.txt
-```
-
-## 9 · On stage: the research mandate (created live, beat 2)
-
-| Field | Value |
-|---|---|
-| Agent | Pricing researcher |
-| Task | `Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.` |
-| Subjects | `acme`, `globex`, `initech`, `umbrella`, `hooli` |
-| Merchants | PriceScope only |
-| Budget | `2.00` |
-| Expiry | `30` |
-
-## 10 · Optional beat 5: CDP refuses the bypass
-
-Runtime key only (the admin key is no longer in `.env`):
-
-```bash
-cd ~/Desktop/calhacks-13.0 && pnpm --filter @apf/gateway payments:cdp-spike bypass
-```
-
-Point at `403 policy_violation`.
-
-## Fallback: the live model ignores the bait
-
-That is expected. Run the compromised pane on `demo`. Only if the lab is down, send the same purchase by hand:
-
-```bash
-K=$(uuidgen | tr A-Z a-z); curl -s http://localhost:4000/pay -H "authorization: Bearer $GREETING_TOKEN" -H 'content-type: application/json' -H "Idempotency-Key: $K" -d '{"url":"http://localhost:4101/v1/pricing/acme?period=30d","method":"GET","expected_price":10000,"purpose":"fetch_data","idempotency_key":"'$K'"}'; echo
-```
-
-## If you ever need the admin key (re-creating the policy)
-
-```bash
-cd ~/Desktop/calhacks-13.0/apps/gateway && npx tsx --env-file=../../.env --env-file=$HOME/apf-admin.env src/payments/scripts/cdp-spike.ts admin
-```
+Logs: `demo/.run/*.log`. Stop everything: `demo/stop.sh`.
 
 ## After each rehearsal
 
-Write a row in the rehearsal log at the bottom of `demo/SCRIPT.md`: mode, agent model, total time, whether the agent took the bait, and what broke.
+Add a row to the rehearsal log at the bottom of `SCRIPT.md`: mode, agent models, total time, whether the live model took the bait, and what broke.

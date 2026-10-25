@@ -27,3 +27,6 @@ design-docs/local/
 
 # Demo agent purchase journal (A19); holds no secrets but is per-machine state.
 .agent-state/
+
+# Demo stack state from demo/reset.sh: databases, logs, mandate tokens
+demo/.run/
