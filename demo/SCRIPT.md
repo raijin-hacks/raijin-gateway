@@ -13,6 +13,7 @@ Know this before you rehearse. Lines from older drafts that contradict it are wr
 - **Grants are per mandate.** The judge's first approval can issue a narrow grant; later calls to the same endpoint and options under the same mandate pass in milliseconds as `tier1 · GRANT_HIT`. Standing grants are off.
 - **Trust carries across runs.** Each off-task denial by the judge costs the agent 3 points (the session loses 15). Grants need trust ≥ 60, and under 40 every purchase goes to a human. That's why every rehearsal starts from a fresh database.
 - **The trust graph is not on the dashboard.** Don't promise one on stage.
+- **Stale human reviews leave the queue on refresh.** A hold expires after 10 minutes. Reloading **Approval queue** runs the same sweep as the pipeline: the row disappears, reserved money is released, and Approve after that is 409. Don't wait 10 minutes on stage.
 - **Mock mode** (`PAYMENTS_MODE=mock`) contacts no merchant and quotes $0.01 for every endpoint. The payments panel labels it `mock, no chain tx`. Real mode settles on Base Sepolia, and the panel links the transaction.
 
 ## Pitch wording
@@ -159,7 +160,7 @@ While they type, keep **Decisions** and **Approval queue** visible. Narrate what
 
 - Anything off the catalog is a pre-contact deny in milliseconds.
 - A PriceScope purchase goes to the judge.
-- After a few denials this session's trust drops under 40, and purchases go to the **Approval queue** for a human. Approve or reject with a one-line note.
+- After a few denials this session's trust drops under 40, and purchases go to the **Approval queue** for a human. Approve or reject with a one-line note. A still-live hold stays on refresh; one past its deadline does not.
 - If the judge flags injection, the session is quarantined, and the next row says `QUARANTINED`.
 
 ## Fallbacks
@@ -279,3 +280,12 @@ Record every run, including the agent model and payments mode. The **Sat evening
 4. Enter operator name and “Removed the poisoned source and inspected the agent”, then **Restore → normal**. Show the audit reason and normal state. Subsequent work resumes within the same unchanged mandate and role caps.
 
 Rehearse deterministically with `pnpm trust:rehearse` (also included in `pnpm agent:rehearse`). It uses an in-process gateway, real SQLite/auth/policy, mock payments and a scripted judge; no ports, internet, model credentials or testnet are required. The printed beat is a scripted policy demonstration, not live-model injection detection or real settlement evidence. Run the dashboard against the gateway for the visual version; `MOCK=1` has fixed normal agents and does not simulate durable restoration.
+
+## Approval queue expiry (rehearsal, not a stage beat)
+
+Reviews expire after 10 minutes. Refreshing **Approval queue** (dashboard `GET /approvals`) now expires them the same way the pipeline sweep does. Do this before freeze, not in the two-minute slot.
+
+- [ ] Start a review, let the deadline pass, refresh the queue: the row is gone and reserved money is released
+- [ ] Try Approve after that refresh: 409, reservation stays released
+- [ ] A still-live review still appears and can be approved
+
