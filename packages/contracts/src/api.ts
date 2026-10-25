@@ -1,5 +1,14 @@
 // Request and response bodies from the final_contracts.md section 2 endpoint table.
-import type { Address, Money, PayResponse, PaymentState, ReasonCode, Stage } from './types.js';
+import type {
+  IncidentCode,
+  RestrictionState,
+  Address,
+  Money,
+  PayResponse,
+  PaymentState,
+  ReasonCode,
+  Stage,
+} from './types.js';
 
 /** `GET /agents` (admin). Trust is the persistent agent-level score, not a session score. */
 export interface AgentSummary {
@@ -7,6 +16,9 @@ export interface AgentSummary {
   name: string;
   role: string;
   trust: number;
+  restriction: RestrictionState;
+  recent_incidents: AgentIncident[];
+  recent_restorations: AgentRestoration[];
 }
 
 /** `GET /agents` response. */
@@ -70,4 +82,31 @@ export interface PaymentStatusResponse {
   amount: Money;
   payee: Address;
   tx_hash: string | null;
+}
+
+/** Immutable audit records; recent lists are newest first, capped at ten. */
+export interface AgentIncident {
+  decision_id: string;
+  mandate_id: string;
+  cause: IncidentCode;
+  previous: RestrictionState;
+  restriction: RestrictionState;
+  created_at: number;
+}
+export interface RestoreAgentRequest {
+  target: 'normal' | 'review_required';
+  reason: string;
+  /** Self-attested identity of the authenticated shared-admin operator. */
+  operator: string;
+}
+export interface AgentRestoration {
+  id: string;
+  previous: RestrictionState;
+  restriction: RestrictionState;
+  reason: string;
+  operator: string;
+  created_at: number;
+}
+export interface RestoreAgentResponse extends AgentRestoration {
+  agent_id: string;
 }

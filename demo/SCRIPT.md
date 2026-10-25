@@ -221,7 +221,7 @@ Grants make the cost scale with the kinds of purchase, not the number of calls: 
 Before grants warm up, a judge call can cost more than a $0.01 payment, and we accept that. After warm-up it's one call per kind of purchase.
 
 **Where's the trust score?**
-It's in the gateway, not on screen. It only ever tightens controls: it removes grants under 60 and sends everything to a human under 40. The judge never sees it. It's a reasonable starting policy, not a validated model.
+The dashboard shows durable agent restrictions and recent incidents. Defined incidents add review, repeated security incidents suspend, and only an explicit operator restoration with a reason loosens restrictions. Approving a payment never restores the agent. Scores and thresholds remain heuristics; the judge never sees them.
 
 ## Payment evidence (from Chunk 1's `STATUS.md`)
 
@@ -269,3 +269,13 @@ Record every run, including the agent model and payments mode. The **Sat evening
 - Record by **Sat 11 PM**: one clean full run, screen plus voice. Say on the recording whether payments are real or mock.
 - Keep it under 2:15. Save it as `demo/backup.mp4`, or link it here if it's too large for git.
 - Check that it plays offline on the demo laptop.
+
+
+## Optional restriction beat (30 seconds, offline backup available)
+
+1. Start with two open mandates for the same agent. Show `normal` in **Agent restrictions**.
+2. The agent reads a poisoned page and attempts its suggested purchase. For the offline rehearsal, the judge is explicitly stubbed to flag injection. Show the denied decision, `JUDGE_INJECTION_SUSPECTED` incident and `review_required` state. Reading the page alone is not an incident; page prose never reaches the judge. The triggering session is quarantined.
+3. In the other already-open session, attempt an ordinary purchase. It appears in the queue with `AGENT_REVIEW_REQUIRED`, bypassing cached grants. Approve once: the payment settles but the agent stays `review_required`. Its next purchase queues again.
+4. Enter operator name and “Removed the poisoned source and inspected the agent”, then **Restore → normal**. Show the audit reason and normal state. Subsequent work resumes within the same unchanged mandate and role caps.
+
+Rehearse deterministically with `pnpm trust:rehearse` (also included in `pnpm agent:rehearse`). It uses an in-process gateway, real SQLite/auth/policy, mock payments and a scripted judge; no ports, internet, model credentials or testnet are required. The printed beat is a scripted policy demonstration, not live-model injection detection or real settlement evidence. Run the dashboard against the gateway for the visual version; `MOCK=1` has fixed normal agents and does not simulate durable restoration.

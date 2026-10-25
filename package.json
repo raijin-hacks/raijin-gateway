@@ -26,6 +26,7 @@
     "paper": "node eval/paper/run.mjs",
     "eval:stub": "node --import tsx eval/api/cli.ts",
     "eval:real": "node --import tsx eval/api/cli.ts --real",
+    "trust:rehearse": "vitest run apps/agent/src/trust-rehearsal.test.ts --reporter=verbose --silent=false",
     "agent:rehearse": "vitest run --project agent",
     "agent:live": "node --import tsx apps/agent/src/live.ts",
     "eval:v13:offline": "node --import tsx eval/supplemental/v1.3-v1/cli.ts",

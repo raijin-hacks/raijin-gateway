@@ -14,7 +14,7 @@ The Agent Payment Firewall sits between an AI agent and its money. A human creat
 | Catalog | `apps/gateway/src/catalog/`, `catalog/catalog.json` | chunk 3 | Trusted merchant list; URL canonicalizer; endpoint matcher |
 | Judge | `apps/gateway/src/judge/` | chunk 3 | Builds the sanitized judge input, calls the model, validates its answer |
 | Merchants | `apps/merchants/` | chunk 1 | PriceScope implementation on `:4101`; SkyData, NewsWire and attacker ports are catalog/demo fixture conventions, not implemented sellers here |
-| Dashboard | `apps/dashboard/` | chunk 4 | Next.js UI: mandate form, live event feed, approval queue, trust graph |
+| Dashboard | `apps/dashboard/` | chunk 4 | Next.js UI: mandate form, live event feed, approval queue, agent restriction and restoration controls (score graph hidden) |
 | Evaluation | `eval/` | chunk 3 | Paper checkpoint, API eval runner, frozen cases, held-out variants, report |
 | Demo agent | `apps/agent/` | chunk 3; final demo handoff unconfirmed | Two-tool agent that reads pages and buys through the gateway |
 
@@ -61,3 +61,12 @@ These are lint rules (`eslint.config.js`) or tests, so breaking one fails CI:
 The [historical report](../eval/REPORT.md) retains its original measurements and labels. Current [supplemental evidence](../eval/supplemental/v1.3-v1/README.md) separates authored task-relevance pairs, deterministic boundary catches, mock transitions and blocked strict-plan cases. Unknown-route or unselected-merchant catches are not judge-only protection. Canary tests demonstrate input-channel exclusion, not universal model correctness.
 
 The worker receives bounded purchased data as untrusted tool output and returns its final answer. Its idempotency map is session-local: gateway replay is durable, but a restarted worker does not yet retain the original purchase key. Recovery can preserve a response durably received by the gateway; a never-received body requires merchant retrieval/replay support. No integrated live-model, chain-settlement or CDP enforcement claim follows from offline tests.
+
+
+## Durable restriction policy (v1.4)
+
+`agents.restriction` is durable across mandates and sessions. `pipeline/restrictions.ts` records one append-only incident per decision and only tightens `normal → review_required → suspended`. Off-task is a review-only signal; infrastructure, malformed inputs and pre-contact denials are excluded. Two security incidents in a mandate/epoch suspend. All approval rewards are zero.
+
+Every authorization boundary reads agent state: pre-contact, grants, final approval, human resume, recovery, and payment-store signing guards. `PaymentStore.canSign` precedes signer invocation; `markSigned` atomically rechecks. An already issued external signature cannot be recalled. Submitted/unknown liabilities continue through reconciliation.
+
+Admin `POST /agents/:id/restore` is the only upward transition. It atomically stores operator/reason/old/new state, resets heuristic scores and active-session quarantine, and begins a new incident epoch. Shared-admin operator names are self-attested. It never changes caps or reopens closed mandates. Incident/restoration events refresh dashboard cards, backed by `GET /agents` audit history. See [the implemented design](../design-docs/trust-design.md) and [v1.4 contracts](../design-docs/final_contracts.md).

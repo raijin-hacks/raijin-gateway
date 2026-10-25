@@ -70,3 +70,10 @@ The earlier variant counts above and `eval/REPORT.md` are historical observation
 | DEVPOST originality/sponsor claims | Chunk 4 must verify comparative and eligibility claims; no external lookup or sponsor verification was performed here. |
 
 Strict immutable-plan activation and CDP signer enforcement remain conditional targets, not claims supplied by this documentation cleanup. See [judge advisory contract gaps](judge-advisories.md).
+
+
+## Trust restriction implementation (v1.4)
+
+Implemented: monotonic automated scores, durable agent state, deduplicated append-only incidents, all authorization/recovery/signing guards, audited admin restoration and dashboard controls. Offline rehearsal: `pnpm trust:rehearse`. See [implementation details and clarifications](../design-docs/trust-design.md).
+
+Remaining limitations: thresholds are heuristic; fresh identities start clean; silent compromises cannot trigger an incident. The proposal names no independent severe detector, so current sources use the specified first-incident/repetition policy. Shared operator names are self-attested, not named-user authentication. SSE can miss events; dashboard polling reloads durable histories. A remote signer invocation cannot be atomically canceled by a later database restriction, but its result is blocked from storage/submission. Existing signed/submitted liabilities cannot be recalled and remain reconciled. These are documented boundaries, not unfinished restoration or enforcement work.

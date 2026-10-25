@@ -87,6 +87,8 @@ export function createPay(
     // 1-2. One authorization per payment: sign only from RESERVED, and store it before anything leaves the process.
     let authorizationJson = row.authorization_json;
     if (row.state === 'RESERVED') {
+      if (!(await store.canSign(paymentId)))
+        throw new Error('Payment authority revoked before signing');
       authorizationJson = await sign(quote, row);
       const { nonce, validBefore } = JSON.parse(authorizationJson).payload.authorization;
       if (

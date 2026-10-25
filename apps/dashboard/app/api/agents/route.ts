@@ -8,8 +8,32 @@ export async function GET() {
 
   if (!isMock()) return callGateway('/agents');
   return Response.json([
-    { id: 'agt_bulk', name: 'Bulk loader', role: 'bulk', trust: 70 },
-    { id: 'agt_logistics', name: 'Logistics analyst', role: 'research', trust: 70 },
-    { id: 'agt_pricing', name: 'Pricing researcher', role: 'research', trust: 70 },
+    {
+      id: 'agt_bulk',
+      name: 'Bulk loader',
+      role: 'bulk',
+      trust: 70,
+      restriction: 'normal',
+      recent_incidents: [],
+      recent_restorations: [],
+    },
+    {
+      id: 'agt_logistics',
+      name: 'Logistics analyst',
+      role: 'research',
+      trust: 70,
+      restriction: 'normal',
+      recent_incidents: [],
+      recent_restorations: [],
+    },
+    {
+      id: 'agt_pricing',
+      name: 'Pricing researcher',
+      role: 'research',
+      trust: 70,
+      restriction: 'normal',
+      recent_incidents: [],
+      recent_restorations: [],
+    },
   ]);
 }

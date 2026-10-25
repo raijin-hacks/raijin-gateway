@@ -11,6 +11,7 @@ import type {
 } from './types.js';
 
 export const PRECONTACT_CODES = [
+  'AGENT_SUSPENDED',
   'NO_MANDATE',
   'QUARANTINED',
   'DENYLIST',
@@ -74,7 +75,10 @@ export const HUMAN_CODES = [
   'HUMAN_TIMEOUT',
 ] as const satisfies readonly HumanCode[];
 
-export const TRUST_CODES = ['TRUST_REQUIRES_HUMAN'] as const satisfies readonly ReasonCode[];
+export const TRUST_CODES = [
+  'TRUST_REQUIRES_HUMAN',
+  'AGENT_REVIEW_REQUIRED',
+] as const satisfies readonly ReasonCode[];
 
 export const REASON_CODES = [
   ...PRECONTACT_CODES,
@@ -115,6 +119,8 @@ export const REASON_STAGE = Object.fromEntries(
 export type ReasonAction = 'deny' | 'escalate' | 'approve' | 'log' | 'judge_decides';
 
 export const REASON_ACTION: Readonly<Record<ReasonCode, ReasonAction>> = {
+  AGENT_SUSPENDED: 'deny',
+  AGENT_REVIEW_REQUIRED: 'escalate',
   NO_MANDATE: 'deny',
   QUARANTINED: 'deny',
   DENYLIST: 'deny',

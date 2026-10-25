@@ -287,3 +287,13 @@ describe('bounded paid response', () => {
     expect((await store.get('p'))?.state).toBe('UNKNOWN');
   });
 });
+
+it('does not invoke the signer or send a paid request when the durable pre-sign guard refuses', async () => {
+  const { payments, store, quote, fetch } = await fixture();
+  vi.spyOn(store, 'canSign').mockResolvedValue(false);
+  const sign = vi.spyOn(x402Client.prototype, 'createPaymentPayload');
+  await expect(payments.pay('p', quote)).rejects.toThrow('authority revoked before signing');
+  expect(sign).not.toHaveBeenCalled();
+  expect(store.called('markSigned')).toBe(0);
+  expect(fetch).toHaveBeenCalledTimes(1); // only the initial quote
+});

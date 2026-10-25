@@ -195,7 +195,27 @@ describe('logs never contain a token (S7)', () => {
       expect((await request(`/payments/${approvedPaymentId}`, agentToken)).status).toBe(200);
       expect((await request(`/decisions/${decisionId}`, agentToken)).status).toBe(200);
 
-      const unknown = await pay('hooli', 'fetch_data');
+      const held = await pay('hooli', 'fetch_data');
+      // v1.4: the earlier off-task incident persists after a payment approval.
+      // Explicitly review this purchase so the credential-redaction probe still exercises payment.
+      expect(held.body.status).toBe('pending');
+      expect(
+        (
+          await request(`/approvals/${held.body.decision_id}`, ADMIN_TOKEN, {
+            method: 'POST',
+            body: JSON.stringify({
+              outcome: 'approved',
+              note: 'Reviewed request',
+              issue_grant: false,
+            }),
+          })
+        ).status,
+      ).toBe(200);
+      const unknown = {
+        body: (await (
+          await request(`/decisions/${held.body.decision_id}`, agentToken)
+        ).json()) as Record<string, unknown>,
+      };
       expect(unknown.body.status).toBe('approved');
       expect(payments.pay).toHaveBeenCalledTimes(3);
       const unknownPaymentId = unknown.body.payment_id as string;
