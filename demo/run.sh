@@ -15,6 +15,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Shortcuts for the sibling scripts: demo/run.sh reset [--real], demo/run.sh stop.
+case "${1:-}" in
+  reset) shift; exec "$ROOT/demo/reset.sh" "$@" ;;
+  stop) exec "$ROOT/demo/stop.sh" ;;
+esac
 TOKENS="$ROOT/demo/.run/tokens.env"
 [ -f "$TOKENS" ] || { echo "no mandates yet: run demo/reset.sh first"; exit 1; }
 # A token given on the command line (a mandate created live in the dashboard) wins over the saved one.
@@ -99,7 +104,7 @@ case "${1:-}" in
     done
     exit 0
     ;;
-  *) echo "usage: demo/run.sh research|greeting|live|by-hand|bulk-vs-research|restore <agent>"; exit 1 ;;
+  *) echo "usage: demo/run.sh research|greeting|live|by-hand|bulk-vs-research|restore <agent>|reset [--real]|stop"; exit 1 ;;
 esac
 
 [ -n "$ANTHROPIC_API_KEY" ] || { echo "ANTHROPIC_API_KEY is not set and not in .env"; exit 1; }
