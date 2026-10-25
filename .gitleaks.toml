@@ -1,0 +1,13 @@
+# Extends the default rule set. Allow only known non-secrets that trip
+# generic-api-key (fixture canaries and an internal SQLite row id).
+title = "calhacks-13.0"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixture identifiers, not credentials"
+regexes = [
+  '''idempotency-v1''',
+  '''CANARY-[0-9a-f]{6}''',
+]

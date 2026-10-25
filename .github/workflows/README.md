@@ -3,6 +3,11 @@
 `ci.yml` runs on pull requests, pushes to `main`, and manual dispatch.
 It uses read-only repository permissions and cancels superseded runs on the same ref.
 
+`secrets.yml` runs on the same events and scans the checkout (and new commits
+on a PR or a push to `main`) with a pinned gitleaks release. It does not scan
+the entire git history, because an early `.env` is still reachable there. Enable
+GitHub secret scanning and push protection before making the repository public.
+
 Python tests run independently using Python 3.12 and `requirements-test.txt`.
 Local setup is documented in `tests/README.md`.
 
