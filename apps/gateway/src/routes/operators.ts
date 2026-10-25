@@ -10,6 +10,7 @@ import {
 import type { Handler } from 'hono';
 import type { AppEnv, Deps } from '../deps.js';
 import { randomUUID } from 'node:crypto';
+import type { Pipeline } from '../pipeline/index.js';
 import { restrictionFor } from '../pipeline/restrictions.js';
 import { badRequest, readJson, notFound } from '../http.js';
 
@@ -73,8 +74,8 @@ export function agentsRoute(deps: Deps): Handler<AppEnv> {
   };
 }
 
-export function approvalsRoute(deps: Deps): Handler<AppEnv> {
-  return (c) => {
+export function approvalsRoute(deps: Deps, pipeline?: Pipeline): Handler<AppEnv> {
+  return async (c) => {
     const params = new URL(c.req.url).searchParams;
     const queryParams = Object.fromEntries(params);
     const hasDuplicateKeys = [...params.keys()].some((key) => params.getAll(key).length > 1);
@@ -89,6 +90,9 @@ export function approvalsRoute(deps: Deps): Handler<AppEnv> {
       );
     }
 
+    // Same expiry as pipeline.sweep(): deadline <= now. Refreshing the dashboard
+    // queue must expire and release, not wait for a worker poll.
+    await pipeline?.sweep();
     const rows = deps.db.sqlite
       .prepare(
         `SELECT
@@ -117,9 +121,10 @@ export function approvalsRoute(deps: Deps): Handler<AppEnv> {
         LEFT JOIN endpoints e ON e.id = d.endpoint_id
         LEFT JOIN merchants mer ON mer.id = e.merchant_id
         WHERE w.state = 'REVIEW'
+          AND w.deadline > ?
         ORDER BY w.deadline, d.id`,
       )
-      .all() as PendingApprovalDbRow[];
+      .all(deps.clock.now()) as PendingApprovalDbRow[];
 
     const approvals = rows.map((row) => ({
       decision_id: row.decision_id,

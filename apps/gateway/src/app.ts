@@ -46,7 +46,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.get('/catalog', admin, (c) => c.json(deps.catalog));
   app.post('/agents/:id/restore', admin, restoreAgentRoute(deps));
   app.get('/agents', admin, agentsRoute(deps));
-  app.get('/approvals', admin, approvalsRoute(deps));
+  app.get('/approvals', admin, approvalsRoute(deps, pipeline));
   app.get('/stream', admin, stream(deps));
 
   app.notFound((c) => notFound(c));
