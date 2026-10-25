@@ -1,3 +1,4 @@
+import AgentRestrictions from './agent-restrictions';
 import ApprovalQueue from './approval-queue';
 import EventFeed from './event-feed';
 import LogoutButton from './logout-button';
@@ -5,8 +6,7 @@ import MandateForm from './mandate-form';
 import PaymentsPanel from './payments-panel';
 import StatsHeader from './stats-header';
 
-// The trust graph (trust-graph.tsx) is left out on purpose: the team plan cuts trust displays
-// from the demo in favour of payment and receipt evidence.
+// Show actionable restriction state; the historical score graph remains hidden.
 export default function Home() {
   return (
     <main className="p-6">
@@ -16,6 +16,7 @@ export default function Home() {
       </header>
       <StatsHeader />
       <MandateForm />
+      <AgentRestrictions />
       <ApprovalQueue />
       <PaymentsPanel />
       <EventFeed />

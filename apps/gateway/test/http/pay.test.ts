@@ -286,7 +286,8 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
     expect(h.money()).toEqual({ spent: 10000, reserved: 0 });
     expect(h.payments.pay).toHaveBeenCalledTimes(1);
     expect(h.count('payments')).toBe(1);
-    expect(h.count('trust_events')).toBe(1);
+    // v1.4: approvals and their replays never award trust, so there is no reward event.
+    expect(h.count('trust_events')).toBe(0);
   });
 
   it('claims concurrent same-key requests before quote and returns an immediate processing handle', async () => {
@@ -446,7 +447,8 @@ describe('/pay mixed Chunk 2/3 pipeline', () => {
         h.db.sqlite
           .prepare('SELECT stage, reasons_json FROM decisions WHERE id = ?')
           .get(result.body.decision_id),
-      ).toEqual({ stage: 'human', reasons_json: '["TRUST_REQUIRES_HUMAN"]' });
+        // v1.4: either incident now adds durable review independently of the session score.
+      ).toEqual({ stage: 'human', reasons_json: '["AGENT_REVIEW_REQUIRED"]' });
       expect(h.payments.pay).not.toHaveBeenCalled();
       expect(h.count('grants')).toBe(0);
       expect(h.money()).toEqual({ spent: 0, reserved: 10000 });

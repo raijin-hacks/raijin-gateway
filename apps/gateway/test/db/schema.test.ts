@@ -128,8 +128,8 @@ describe('the migrated schema matches final_contracts.md section 1', () => {
   const db = openDb(':memory:');
   const tables = contractTables();
 
-  it('parses all 14 contract tables', () => {
-    expect(tables.map((t) => t.name)).toHaveLength(14);
+  it('parses all 16 contract tables', () => {
+    expect(tables.map((t) => t.name)).toHaveLength(16);
   });
 
   it('has exactly the contract tables plus the proposed ones', () => {
@@ -222,7 +222,7 @@ describe('database setup', () => {
   it('applies the migration once and can reopen the same file', () => {
     const db = tempDb();
     const again = openDb(db.sqlite.name);
-    expect(count(again, '__drizzle_migrations')).toBe(3);
+    expect(count(again, '__drizzle_migrations')).toBe(4);
     expect(tableNames(again)).toEqual(tableNames(db));
     again.sqlite.close();
   });

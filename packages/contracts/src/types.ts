@@ -10,7 +10,10 @@ export type HttpMethod = 'GET' | 'POST';
 export type Stage = 'precontact' | 'tier0' | 'tier1' | 'judge' | 'human';
 export type PaymentState = 'RESERVED' | 'SIGNED' | 'SUBMITTED' | 'SETTLED' | 'FAILED' | 'UNKNOWN';
 
-export type PrecontactCode = 'NO_MANDATE' | 'QUARANTINED' | 'DENYLIST' | 'SECRET_IN_URL' | 'QUERY_TOO_LONG'
+export type RestrictionState = 'normal' | 'review_required' | 'suspended';
+export type IncidentCode = 'JUDGE_INJECTION_SUSPECTED' | 'PAYEE_SWAP' | 'PRICE_MISMATCH' | 'HUMAN_REJECTED' | 'JUDGE_OFF_TASK';
+
+export type PrecontactCode = 'AGENT_SUSPENDED' | 'NO_MANDATE' | 'QUARANTINED' | 'DENYLIST' | 'SECRET_IN_URL' | 'QUERY_TOO_LONG'
   | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL' | 'UNCATALOGED_ENDPOINT' | 'MERCHANT_NOT_SELECTED';
 export type QuoteCode = 'QUOTE_FAILED' | 'NOT_402' | 'QUOTE_INVALID';
 export type Tier0Code = 'NETWORK' | 'PAYEE_SWAP' | 'PER_CALL_CAP' | 'REFERENCE_PRICE' | 'PRICE_MISMATCH'
@@ -20,7 +23,7 @@ export type Tier1Code = 'GRANT_HIT' | 'GRANT_NONE' | 'GRANT_PRICE' | 'GRANT_ENDP
 export type JudgeCode = 'JUDGE_APPROVED' | 'JUDGE_OFF_TASK' | 'JUDGE_OVER_SCOPED' | 'JUDGE_UNKNOWN_MERCHANT'
   | 'JUDGE_PRICE_UNUSUAL' | 'JUDGE_UNEXPECTED_PARAMS' | 'JUDGE_INJECTION_SUSPECTED' | 'JUDGE_ERROR' | 'JUDGE_INVALID_OUTPUT';
 export type HumanCode = 'HUMAN_APPROVED' | 'HUMAN_REJECTED' | 'HUMAN_TIMEOUT';
-export type ReasonCode = PrecontactCode | QuoteCode | Tier0Code | Tier1Code | JudgeCode | HumanCode | 'TRUST_REQUIRES_HUMAN';
+export type ReasonCode = PrecontactCode | QuoteCode | Tier0Code | Tier1Code | JudgeCode | HumanCode | 'TRUST_REQUIRES_HUMAN' | 'AGENT_REVIEW_REQUIRED';
 
 // ---------- /pay ----------
 export interface PayRequest {
@@ -84,6 +87,7 @@ export interface PaymentsModule {
 // Every method is a conditional update on the current state and returns false if it changed nothing.
 // pay() never calls fail(): a merchant's rejection proves nothing while a signed authorization is still valid.
 export interface PaymentStore {
+  canSign(paymentId: string): Promise<boolean>; // durable authority check immediately before invoking signer; markSigned rechecks atomically
   get(paymentId: string): Promise<{ id: string; mandate_id: string; amount: Money; payee: Address; state: PaymentState;
     nonce: string | null; valid_before: EpochMs | null; authorization_json: string | null } | null>;
   markSigned(paymentId: string, f: { nonce: string; validBefore: EpochMs; authorizationJson: string }): Promise<boolean>; // RESERVED -> SIGNED
@@ -149,6 +153,8 @@ export interface JudgeModule {
 
 // ---------- Dashboard stream ----------
 export type StreamEvent =
+  | { type: 'agent_incident'; agent_id: string; decision_id: string; mandate_id: string; cause: IncidentCode; previous: RestrictionState; restriction: RestrictionState; at: EpochMs }
+  | { type: 'agent_restored'; agent_id: string; restoration_id: string; previous: RestrictionState; restriction: RestrictionState; reason: string; operator: string; at: EpochMs }
   | { type: 'decision'; decision_id: string; mandate_id: string; stage: Stage; outcome: 'approved' | 'denied' | 'pending';
       reasons: ReasonCode[]; price: Money | null; latency_ms: number; at: EpochMs }
   | { type: 'payment'; payment_id: string; state: PaymentState; amount: Money; at: EpochMs }

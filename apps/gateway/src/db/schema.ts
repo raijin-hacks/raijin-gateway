@@ -34,17 +34,27 @@ export const roles = sqliteTable('roles', {
   grant_trust_threshold: integer().notNull(), // e.g. 60
 });
 
-export const agents = sqliteTable('agents', {
-  id: text().primaryKey(),
-  tenant_id: text()
-    .notNull()
-    .references(() => tenants.id),
-  role_id: text()
-    .notNull()
-    .references(() => roles.id),
-  name: text().notNull(),
-  trust: real().notNull(), // agent-level score
-});
+export const agents = sqliteTable(
+  'agents',
+  {
+    id: text().primaryKey(),
+    tenant_id: text()
+      .notNull()
+      .references(() => tenants.id),
+    role_id: text()
+      .notNull()
+      .references(() => roles.id),
+    name: text().notNull(),
+    trust: real().notNull(), // agent-level score
+    restriction: text({ enum: ['normal', 'review_required', 'suspended'] })
+      .notNull()
+      .default('normal'),
+    restriction_epoch: integer().notNull().default(0),
+  },
+  (t) => [
+    check('agents_restriction', sql`${t.restriction} IN ('normal','review_required','suspended')`),
+  ],
+);
 
 // Catalog is loaded from catalog/catalog.json at startup into these tables.
 export const merchants = sqliteTable('merchants', {
@@ -357,5 +367,39 @@ export const payReviewEvents = sqliteTable('pay_review_events', {
   outcome: text().notNull(),
   note: text().notNull(),
   reasons_json: text().notNull(),
+  created_at: integer().notNull(),
+});
+
+// v1.4: immutable incidents deduplicated by decision, and explicit human restoration audit.
+export const agentIncidents = sqliteTable(
+  'agent_incidents',
+  {
+    decision_id: text()
+      .primaryKey()
+      .references(() => decisions.id),
+    agent_id: text()
+      .notNull()
+      .references(() => agents.id),
+    mandate_id: text()
+      .notNull()
+      .references(() => mandates.id),
+    cause: text().notNull(),
+    previous: text().notNull(),
+    restriction: text().notNull(),
+    restriction_epoch: integer().notNull(),
+    severe: integer().notNull().default(0),
+    created_at: integer().notNull(),
+  },
+  (t) => [index('agent_incidents_agent_mandate').on(t.agent_id, t.mandate_id, t.restriction_epoch)],
+);
+export const agentRestorations = sqliteTable('agent_restorations', {
+  id: text().primaryKey(),
+  agent_id: text()
+    .notNull()
+    .references(() => agents.id),
+  previous: text().notNull(),
+  restriction: text().notNull(),
+  reason: text().notNull(),
+  operator: text().notNull(),
   created_at: integer().notNull(),
 });

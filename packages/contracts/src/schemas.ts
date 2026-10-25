@@ -3,7 +3,14 @@
 // test/types.test.ts checks that each schema infers exactly its contract type.
 import { z } from 'zod';
 import { INPUT_LIMITS, JUDGE_EXPLANATION_MAX_CHARS } from './constants.js';
-import { HTTP_METHODS, PAYMENT_STATES, PURPOSE_CODES, STAGES } from './enums.js';
+import {
+  HTTP_METHODS,
+  PAYMENT_STATES,
+  PURPOSE_CODES,
+  STAGES,
+  RESTRICTION_STATES,
+  INCIDENT_CODES,
+} from './enums.js';
 import { JUDGE_CODES, REASON_CODES } from './reasons.js';
 import type { Address } from './types.js';
 
@@ -116,11 +123,41 @@ export const ApprovalRequestSchema = z.strictObject({
 
 // ---------- Operator dashboard reads (section 2) ----------
 
+export const RestrictionStateSchema = z.enum(RESTRICTION_STATES);
+export const IncidentCodeSchema = z.enum(INCIDENT_CODES);
+export const AgentIncidentSchema = z.strictObject({
+  decision_id: prefixedId('dec'),
+  mandate_id: prefixedId('mnd'),
+  cause: IncidentCodeSchema,
+  previous: RestrictionStateSchema,
+  restriction: RestrictionStateSchema,
+  created_at: EpochMs,
+});
+export const RestoreAgentRequestSchema = z.strictObject({
+  target: z.enum(['normal', 'review_required']),
+  reason: Text(INPUT_LIMITS.noteMaxChars),
+  operator: Text(100),
+});
+export const AgentRestorationSchema = z.strictObject({
+  id: z.string(),
+  previous: RestrictionStateSchema,
+  restriction: RestrictionStateSchema,
+  reason: z.string(),
+  operator: z.string(),
+  created_at: EpochMs,
+});
+export const RestoreAgentResponseSchema = AgentRestorationSchema.extend({
+  agent_id: prefixedId('agt'),
+});
+
 export const AgentSummarySchema = z.strictObject({
   id: prefixedId('agt'),
   name: z.string().min(1),
   role: z.string().min(1),
   trust: z.number(),
+  restriction: RestrictionStateSchema,
+  recent_incidents: z.array(AgentIncidentSchema),
+  recent_restorations: z.array(AgentRestorationSchema),
 });
 
 export const AgentsResponseSchema = z.array(AgentSummarySchema);
@@ -239,6 +276,26 @@ export const JudgeOutputSchema = z
 // ---------- Dashboard stream (section 5) ----------
 
 export const StreamEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('agent_incident'),
+    agent_id: z.string(),
+    decision_id: z.string(),
+    mandate_id: z.string(),
+    cause: IncidentCodeSchema,
+    previous: RestrictionStateSchema,
+    restriction: RestrictionStateSchema,
+    at: EpochMs,
+  }),
+  z.strictObject({
+    type: z.literal('agent_restored'),
+    agent_id: z.string(),
+    restoration_id: z.string(),
+    previous: RestrictionStateSchema,
+    restriction: RestrictionStateSchema,
+    reason: z.string(),
+    operator: z.string(),
+    at: EpochMs,
+  }),
   z.strictObject({
     type: z.literal('decision'),
     decision_id: z.string(),

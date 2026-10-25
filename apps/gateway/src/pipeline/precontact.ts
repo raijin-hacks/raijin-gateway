@@ -1,5 +1,5 @@
 // Chunk 2-owned. No network/payment imports: admission is supplied by startup.
-import { normalizeSubject, type ReasonCode } from '@apf/contracts';
+import { normalizeSubject, type RestrictionState, type ReasonCode } from '@apf/contracts';
 import type { AdmittedRoute } from '../judge/gateway.js';
 import type { AgentContext } from '../deps.js';
 import { containsSecret, urlSecretFacts } from './secrets.js';
@@ -10,7 +10,9 @@ export function precontact(
   rawUrl: string,
   now: number,
   denylist: readonly string[] = [],
+  restriction: RestrictionState = 'normal',
 ): ReasonCode | null {
+  if (restriction === 'suspended') return 'AGENT_SUSPENDED';
   if (
     agent.mandate.status !== 'active' ||
     agent.mandate.expires_at <= now ||

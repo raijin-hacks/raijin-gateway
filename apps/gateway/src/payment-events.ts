@@ -17,6 +17,7 @@ export function withPaymentEvents(store: PaymentStore, bus: EventBus, clock: Clo
     return true;
   }
   return {
+    canSign: (id) => store.canSign(id),
     get: (id) => store.get(id),
     listUnresolved: () => store.listUnresolved(),
     markSigned: async (id, fields) => publish(id, await store.markSigned(id, fields)),

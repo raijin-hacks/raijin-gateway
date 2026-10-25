@@ -231,6 +231,12 @@ function ApprovalItem({
         <dd>{item.explanation ?? <span className="text-gray-500">No explanation</span>}</dd>
       </dl>
 
+      {item.reasons.includes('AGENT_REVIEW_REQUIRED') && (
+        <p className="mt-3 rounded bg-amber-950 p-2 text-amber-200">
+          This agent requires review after an incident. Approving this payment does not restore the
+          agent or enable grants.
+        </p>
+      )}
       <input
         className="mt-3 w-full rounded border border-gray-600 bg-transparent px-2 py-1"
         value={note}

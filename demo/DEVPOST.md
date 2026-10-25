@@ -26,7 +26,7 @@ A gateway that sits between an agent and its money. A human creates a **mandate*
 4. **Task judge (Tier 2).** An LLM asks one question: would someone doing exactly this task need this purchase? **It never reads attacker-written text.** It sees the human's task, the admin's catalog labels, a price and counts. URLs from unknown merchants arrive as segment lengths only.
 5. **Human review (Tier 3).** Escalations wait in a dashboard queue for an approval or rejection with a note.
 
-A per-session trust score only ever tightens control. The judge never sees it. The dashboard shows live decisions and the approval queue. The trust graph is not on screen.
+Durable per-agent restrictions only tighten automatically: defined incidents require review, and repeated security incidents suspend purchases across sessions and mandates. Clean payments never earn trust back. Only an explicit admin restoration with an operator name and reason loosens restrictions. The judge never sees trust. The dashboard shows restriction state, recent incidents, restoration controls, live decisions and the approval queue; the historical trust graph remains hidden.
 
 **The signer is a second, independent check.** The gateway signs through a Coinbase CDP server account with a policy attached: only a Base Sepolia USDC `TransferWithAuthorization`, only to the merchant's payee, at most 0.01 USDC per signature, and every other signing route rejected. CDP independently rejects the prohibited signatures we demonstrate, including when we call the gateway's signer with its own checks skipped. The gateway's key can sign but can't edit or detach that policy. The policy only sees each signature, so the endpoint, the subjects and running totals stay the gateway's job.
 
@@ -36,7 +36,7 @@ A per-session trust score only ever tightens control. The judge never sees it. T
 - **Payments:** x402 (`@x402/core`, `@x402/fetch`, `@x402/evm`, `@x402/express`), viem, USDC on Base Sepolia through the public x402.org test facilitator (not CDP's facilitator). Includes a payment lifecycle and a reconciler, so a lost settlement response or a crash never overspends.
 - **Signer:** a Coinbase CDP server account (`@coinbase/cdp-sdk`) under an attached signing policy, with separate admin and runtime keys. The gateway never falls back to a local key if CDP refuses or times out.
 - **Judge:** Claude, temperature 0, pinned model, 5-second timeout, output validated with zod. Any error is a denial.
-- **Dashboard:** Next.js with server-sent events. The admin token stays on the server. The trust graph is not shown.
+- **Dashboard:** Next.js with server-sent events. The admin token stays on the server. Agent restriction state and audited restoration are shown; the historical trust graph is not.
 - **Test merchants:** one honest x402 seller, PriceScope, serving synthetic price data on `http://localhost:4101` (a loopback exception in the gateway's destination rules, not HTTPS), and an attacker server on `localhost:4199` with injected pages. The attacker server isn't in the catalog, so the gateway never contacts it.
 - **Contracts first:** one shared types package, with the judge's input fixed by contract so that no code path can add attacker text to it.
 
