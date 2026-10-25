@@ -113,6 +113,6 @@ if [ "${RESUME:-}" != 1 ] && [ -f "$JOURNAL" ]; then
   mv "$JOURNAL" "demo/.run/old/journal-$1-$(date +%Y%m%d-%H%M%S).json"
 fi
 
-echo "agent model: $MODEL"
+echo "stack: ${PAYMENTS_MODE:-mock} payments · agent model: $MODEL"
 MANDATE_TOKEN="$TOKEN" AGENT_TASK="$TASK" AGENT_MODEL="$MODEL" AGENT_JOURNAL_PATH="$JOURNAL" \
   pnpm --silent agent:live
