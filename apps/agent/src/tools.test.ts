@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { createTools } from './tools.js';
+import { createTools, MAX_POLLS, PURCHASE_DEADLINE_MS } from './tools.js';
 const token = 't'.repeat(43);
 const purchase = {
   url: 'http://localhost:4101/v1/pricing/acme',
@@ -55,7 +55,7 @@ it('bounds hanging transport by time independently of attempt count', async () =
       transport: () => new Promise(() => {}),
     });
     const result = expect(tools.paid_fetch(purchase)).rejects.toThrow('PAYMENT_UNRESOLVED');
-    await vi.advanceTimersByTimeAsync(15001);
+    await vi.advanceTimersByTimeAsync(PURCHASE_DEADLINE_MS + 1);
     await result;
   } finally {
     vi.useRealTimers();
@@ -95,7 +95,7 @@ it('polls pending and unknown decisions with bounded attempts and terminates on 
       },
     });
     expect((await tools.paid_fetch(purchase)).status).toBe(status);
-    expect(calls).toBe(status === 'payment_unknown' ? 5 : 4);
+    expect(calls).toBe(status === 'payment_unknown' ? 5 : MAX_POLLS + 1);
   }
   let calls = 0;
   const tools = createTools({

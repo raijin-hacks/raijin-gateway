@@ -39,7 +39,8 @@ export function createTokenClient(
           ...init.headers,
         },
         redirect: 'error',
-        signal: AbortSignal.timeout(5000),
+        // /pay answers only after the judge, signing and settlement, which take over 5 s in real mode.
+        signal: AbortSignal.timeout(30000),
       });
       // 409 on /pay means this key is bound to a different request. Retrying cannot fix that,
       // and minting a new key would risk a second purchase, so callers must stop.
