@@ -47,6 +47,10 @@ export class MemoryPaymentStore implements PaymentStore {
     return row ? { ...row } : null;
   }
 
+  async canSign(paymentId: string): Promise<boolean> {
+    return (await this.get(paymentId))?.state === 'RESERVED';
+  }
+
   async markSigned(
     paymentId: string,
     f: { nonce: string; validBefore: EpochMs; authorizationJson: string },

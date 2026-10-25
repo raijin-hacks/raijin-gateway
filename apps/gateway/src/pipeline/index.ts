@@ -18,6 +18,8 @@ import { createCanonicalizer } from '../catalog/index.js';
 import { createGatewayAdmission, runGatewayJudge, type AdmittedRoute } from '../judge/gateway.js';
 import { newId } from '../ids.js';
 import { bindingSecret, catalogRevision, claim, workflow, type Workflow } from './idempotency.js';
+import { incidentCause, recordIncident, restrictionFor } from './restrictions.js';
+import type { StreamEvent } from '@apf/contracts';
 import { precontact } from './precontact.js';
 import { withRenewal } from './renewal.js';
 import { containsSecret, urlSecretFacts } from './secrets.js';
@@ -184,6 +186,7 @@ export function createPipeline(deps: PipelineDependencies) {
     quarantine = false,
     emit = true,
   ): PayResponse {
+    let incident: Extract<StreamEvent, { type: 'agent_incident' }> | undefined;
     const changed = sql
       .transaction(() => {
         if (!owns(id, owner)) return false;
@@ -217,15 +220,33 @@ export function createPipeline(deps: PipelineDependencies) {
           );
         if (quarantine)
           updateTrust(deps, agent, id, 'JUDGE_INJECTION_SUSPECTED', 'judgeInjection', true);
-        else if (!hold && reasons.includes('JUDGE_OFF_TASK'))
+        else if (reasons.includes('JUDGE_OFF_TASK'))
           updateTrust(deps, agent, id, 'JUDGE_OFF_TASK', 'judgeOffTask');
         else if (!hold && reasons.includes('HUMAN_REJECTED'))
           updateTrust(deps, agent, id, 'HUMAN_REJECTED', 'humanRejected');
-        else if (!hold && stage === 'tier0' && !reasons.includes('INTERNAL_ERROR'))
+        else if (
+          !hold &&
+          stage === 'tier0' &&
+          !reasons.some((code) =>
+            [
+              'INTERNAL_ERROR',
+              'QUOTE_FAILED',
+              'QUOTE_INVALID',
+              'NOT_402',
+              'AGENT_SUSPENDED',
+            ].includes(code),
+          )
+        )
           updateTrust(deps, agent, id, reasons[0]!, 'tier0Denial');
+        const cause = incidentCause(reasons);
+        if (cause) incident = recordIncident(deps, id, cause);
         return true;
       })
       .immediate();
+    if (incident) {
+      deps.log.info('agent incident', { ...incident });
+      deps.bus.publish(incident);
+    }
     if (changed && emit) publish(id, true);
     return replay(id);
   }
@@ -243,7 +264,16 @@ export function createPipeline(deps: PipelineDependencies) {
         if (!owns(id, owner)) return false;
         const d = decision(id)!;
         const agent = loadAgent(deps, d.mandate_id, d.session_id);
+        const restriction = restrictionFor(deps, agent.mandate.agent_id).restriction;
+        if (restriction === 'suspended') {
+          refusal = 'AGENT_SUSPENDED';
+          return false;
+        }
         if (!active(agent, deps.clock.now())) return false;
+        if (stage !== 'human' && restriction === 'review_required') {
+          refusal = 'AGENT_REVIEW_REQUIRED';
+          return false;
+        }
         const reviewed = JSON.parse(workflow(deps.db, id)!.reviewed_json) as ReasonCode[];
         if (stage !== 'human' && agent.session.trust < 40) {
           refusal = 'TRUST_REQUIRES_HUMAN';
@@ -315,13 +345,6 @@ export function createPipeline(deps: PipelineDependencies) {
             "UPDATE pay_workflows SET state = 'AUTHORIZED', response_json = NULL WHERE decision_id = ? AND owner = ?",
           )
           .run(id, owner);
-        updateTrust(
-          deps,
-          agent,
-          id,
-          stage === 'human' ? 'HUMAN_APPROVED' : 'APPROVED',
-          stage === 'human' ? 'humanApproved' : 'approved',
-        );
         return true;
       })
       .immediate();
@@ -330,9 +353,9 @@ export function createPipeline(deps: PipelineDependencies) {
       return finish(
         id,
         owner,
-        refusalCode === 'NO_MANDATE'
+        refusalCode === 'NO_MANDATE' || refusalCode === 'AGENT_SUSPENDED'
           ? 'precontact'
-          : refusalCode === 'TRUST_REQUIRES_HUMAN'
+          : refusalCode === 'TRUST_REQUIRES_HUMAN' || refusalCode === 'AGENT_REVIEW_REQUIRED'
             ? 'human'
             : 'tier0',
         [refusalCode],
@@ -377,6 +400,8 @@ export function createPipeline(deps: PipelineDependencies) {
       if (!owns(id, owner)) return replay(id);
       const d = decision(id)!;
       let agent = loadAgent(deps, d.mandate_id, d.session_id);
+      if (restrictionFor(deps, agent.mandate.agent_id).restriction === 'suspended')
+        return finish(id, owner, 'precontact', ['AGENT_SUSPENDED']);
       if (!active(agent, deps.clock.now()))
         return finish(id, owner, 'precontact', [
           agent.session.status === 'quarantined' || agent.session.trust < 20
@@ -389,12 +414,14 @@ export function createPipeline(deps: PipelineDependencies) {
       const reviewed = JSON.parse(saved.reviewed_json) as ReasonCode[];
       const result = await admission.run(request.url, request.method, async (route) => {
         if (!owns(id, owner)) return replay(id);
+        agent = loadAgent(deps, d.mandate_id, d.session_id);
         const pre = precontact(
           agent,
           route,
           request.url,
           deps.clock.now(),
           deps.config.denylistHosts,
+          restrictionFor(deps, agent.mandate.agent_id).restriction,
         );
         if (
           pre &&
@@ -424,6 +451,8 @@ export function createPipeline(deps: PipelineDependencies) {
         )
           return finish(id, owner, 'tier0', ['QUOTE_INVALID']);
         agent = loadAgent(deps, d.mandate_id, d.session_id);
+        if (restrictionFor(deps, agent.mandate.agent_id).restriction === 'suspended')
+          return finish(id, owner, 'precontact', ['AGENT_SUSPENDED']);
         const role = roleFor(deps, agent);
         if (saved.quote_json && human) {
           const old = JSON.parse(saved.quote_json) as Quote;
@@ -479,6 +508,8 @@ export function createPipeline(deps: PipelineDependencies) {
               : undefined,
           );
         }
+        if (restrictionFor(deps, agent.mandate.agent_id).restriction === 'review_required')
+          return finish(id, owner, 'human', ['AGENT_REVIEW_REQUIRED'], true);
         if (agent.session.trust < 40)
           return finish(id, owner, 'human', ['TRUST_REQUIRES_HUMAN'], true);
         return withRenewal(
@@ -493,10 +524,15 @@ export function createPipeline(deps: PipelineDependencies) {
           async () => {
             if (!owns(id, owner)) return replay(id);
             agent = loadAgent(deps, d.mandate_id, d.session_id);
+            const restriction = restrictionFor(deps, agent.mandate.agent_id).restriction;
+            if (restriction === 'suspended')
+              return finish(id, owner, 'precontact', ['AGENT_SUSPENDED']);
             if (!active(agent, deps.clock.now()))
               return finish(id, owner, 'precontact', [
                 agent.session.status === 'quarantined' ? 'QUARANTINED' : 'NO_MANDATE',
               ]);
+            if (restriction === 'review_required')
+              return finish(id, owner, 'human', ['AGENT_REVIEW_REQUIRED'], true);
             if (agent.session.trust < 40)
               return finish(id, owner, 'human', ['TRUST_REQUIRES_HUMAN'], true);
             if (grantHit(deps, agent, roleFor(deps, agent), route, quote))
@@ -581,6 +617,11 @@ export function createPipeline(deps: PipelineDependencies) {
         processing: workflow(deps.db, claimed.id)?.state === 'PROCESSING',
       };
     const current = loadAgent(deps, agent.mandate.id, agent.session.id);
+    if (restrictionFor(deps, current.mandate.agent_id).restriction === 'suspended')
+      return {
+        response: finish(claimed.id, claimed.owner, 'precontact', ['AGENT_SUSPENDED']),
+        processing: false,
+      };
     if (!active(current, deps.clock.now()))
       return {
         response: finish(claimed.id, claimed.owner, 'precontact', [
@@ -718,25 +759,41 @@ export function createPipeline(deps: PipelineDependencies) {
       )
       .all() as { decision_id: string }[];
     for (const row of rows) {
+      const w = workflow(deps.db, row.decision_id)!;
+      const d = decision(row.decision_id)!;
+      const agent = loadAgent(deps, d.mandate_id, d.session_id);
+      const suspended = restrictionFor(deps, agent.mandate.agent_id).restriction === 'suspended';
       sql
         .transaction(() => {
-          releaseUnsigned(deps, row.decision_id);
           sql
             .prepare(
-              "UPDATE pay_workflows SET state = 'TERMINAL', response_json = ? WHERE decision_id = ? AND state = 'AUTHORIZED'",
+              "UPDATE pay_workflows SET state = 'PROCESSING' WHERE decision_id = ? AND state = 'AUTHORIZED'",
             )
-            .run(
-              JSON.stringify({
-                status: 'denied',
-                decision_id: row.decision_id,
-                stage: 'tier0',
-                reasons: ['INTERNAL_ERROR'],
-                explanation: null,
-              }),
-              row.decision_id,
-            );
+            .run(row.decision_id);
+          finish(
+            row.decision_id,
+            w.owner,
+            suspended ? 'precontact' : 'tier0',
+            [suspended ? 'AGENT_SUSPENDED' : 'INTERNAL_ERROR'],
+            false,
+            null,
+            false,
+            false,
+          );
         })
         .immediate();
+      publish(row.decision_id);
+    }
+    const suspended = sql
+      .prepare(
+        "SELECT w.* FROM pay_workflows w JOIN decisions d ON d.id = w.decision_id JOIN mandates m ON m.id = d.mandate_id JOIN agents a ON a.id = m.agent_id WHERE w.state IN ('REVIEW','PROCESSING') AND a.restriction = 'suspended'",
+      )
+      .all() as Workflow[];
+    for (const w of suspended) {
+      sql
+        .prepare("UPDATE pay_workflows SET state = 'PROCESSING' WHERE decision_id = ?")
+        .run(w.decision_id);
+      finish(w.decision_id, w.owner, 'precontact', ['AGENT_SUSPENDED']);
     }
   }
   return { run, review, sweep, replay, recover };

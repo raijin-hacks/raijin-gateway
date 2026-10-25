@@ -124,12 +124,23 @@ describe('operator dashboard response schemas', () => {
 
   it('validates an agent and the required pending status query', () => {
     expect(
-      AgentSummarySchema.parse({ id: 'agt_demo', name: 'Demo', role: 'research', trust: 70 }),
+      AgentSummarySchema.parse({
+        id: 'agt_demo',
+        name: 'Demo',
+        role: 'research',
+        trust: 70,
+        restriction: 'normal',
+        recent_incidents: [],
+        recent_restorations: [],
+      }),
     ).toEqual({
       id: 'agt_demo',
       name: 'Demo',
       role: 'research',
       trust: 70,
+      restriction: 'normal',
+      recent_incidents: [],
+      recent_restorations: [],
     });
     expect(ApprovalsQuerySchema.safeParse({ status: 'pending' }).success).toBe(true);
     expect(ApprovalsQuerySchema.safeParse({ status: 'approved' }).success).toBe(false);

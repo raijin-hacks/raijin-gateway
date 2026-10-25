@@ -17,9 +17,33 @@ describe('GET /agents', () => {
     const response = await h.admin('/agents');
     expect(response.status).toBe(200);
     expect(AgentsResponseSchema.parse(await response.json())).toEqual([
-      { id: 'agt_bulk', name: 'Bulk loader', role: 'bulk', trust: 70 },
-      { id: 'agt_logistics', name: 'Logistics analyst', role: 'research', trust: 70 },
-      { id: 'agt_pricing', name: 'Pricing researcher', role: 'research', trust: 72.5 },
+      {
+        id: 'agt_bulk',
+        name: 'Bulk loader',
+        role: 'bulk',
+        trust: 70,
+        restriction: 'normal',
+        recent_incidents: [],
+        recent_restorations: [],
+      },
+      {
+        id: 'agt_logistics',
+        name: 'Logistics analyst',
+        role: 'research',
+        trust: 70,
+        restriction: 'normal',
+        recent_incidents: [],
+        recent_restorations: [],
+      },
+      {
+        id: 'agt_pricing',
+        name: 'Pricing researcher',
+        role: 'research',
+        trust: 72.5,
+        restriction: 'normal',
+        recent_incidents: [],
+        recent_restorations: [],
+      },
     ]);
   });
 });

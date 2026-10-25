@@ -9,6 +9,7 @@ import {
 import type { AgentContext, Deps } from '../deps.js';
 import type { AdmittedRoute } from '../judge/gateway.js';
 import { createFunds, utcDay } from '../db/funds.js';
+import { restrictionFor } from './restrictions.js';
 import { newId } from '../ids.js';
 import { CONTRACT_SQL, EXTRA_SQL } from '../db/statements.js';
 
@@ -91,6 +92,8 @@ export function tier0(
       sql
         .prepare('UPDATE pay_workflows SET tier0_at = COALESCE(tier0_at, ?) WHERE decision_id = ?')
         .run(now, id);
+      if (restrictionFor(deps, agent.mandate.agent_id).restriction === 'suspended')
+        return { reason: 'AGENT_SUSPENDED' };
       if (!active(agent, now))
         return {
           reason:
@@ -200,6 +203,7 @@ export function grantHit(
   quote: Quote,
 ): boolean {
   if (
+    restrictionFor(deps, agent.mandate.agent_id).restriction !== 'normal' ||
     agent.session.trust < Math.max(60, role.grant_trust_threshold) ||
     route.match.params.some(
       (p) =>
@@ -251,6 +255,7 @@ export function issueGrant(
   proposal: NonNullable<JudgeOutput['grant']>,
   source: 'judge' | 'human',
 ): void {
+  if (restrictionFor(deps, agent.mandate.agent_id).restriction !== 'normal') return;
   // Human approval of unusual subjects/parameters cannot broaden reusable mandate scope.
   if (
     route.match.params.some(
@@ -314,10 +319,13 @@ export function updateTrust(
   const sql = deps.db.sqlite;
   if (sql.prepare('SELECT id FROM trust_events WHERE decision_id = ?').get(id)) return;
   const delta = TRUST_DELTAS[event];
+  if (delta.session === 0 && delta.agent === 0) return;
+  // Off-task is a review signal: it cannot by itself drive scores into quarantine.
+  const floor = event === 'judgeOffTask' ? 20 : 0;
   const role = roleFor(deps, agent);
   sql
-    .prepare('UPDATE agents SET trust = MAX(0, MIN(?, trust + ?)) WHERE id = ?')
-    .run(role.baseline_trust, delta.agent, agent.mandate.agent_id);
+    .prepare('UPDATE agents SET trust = MIN(trust, MAX(?, MIN(?, trust + ?))) WHERE id = ?')
+    .run(floor, role.baseline_trust, delta.agent, agent.mandate.agent_id);
   const agentTrust = (
     sql.prepare('SELECT trust FROM agents WHERE id = ?').get(agent.mandate.agent_id) as {
       trust: number;
@@ -325,9 +333,9 @@ export function updateTrust(
   ).trust;
   sql
     .prepare(
-      "UPDATE sessions SET trust = MAX(0, MIN(?, trust + ?)), status = CASE WHEN ? THEN 'quarantined' ELSE status END WHERE id = ?",
+      "UPDATE sessions SET trust = MIN(trust, MAX(?, MIN(?, trust + ?))), status = CASE WHEN ? THEN 'quarantined' ELSE status END WHERE id = ?",
     )
-    .run(agentTrust, delta.session, quarantine ? 1 : 0, agent.session.id);
+    .run(floor, agentTrust, delta.session, quarantine ? 1 : 0, agent.session.id);
   sql
     .prepare(
       'INSERT INTO trust_events (id, session_id, agent_id, delta_session, delta_agent, cause, decision_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

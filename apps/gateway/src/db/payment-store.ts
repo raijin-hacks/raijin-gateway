@@ -42,13 +42,18 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
       `UPDATE payments SET state = '${to}'${extraSet}, updated_at = :now
         WHERE id = :payment_id AND state = '${from}'`,
     );
+  // The same durable predicate guards signer invocation and the atomic SIGNED write.
+  const signingAuthority = `EXISTS (SELECT 1 FROM mandates m JOIN decisions d ON d.mandate_id = m.id
+    JOIN sessions s ON s.id = d.session_id JOIN agents a ON a.id = m.agent_id WHERE d.id = payments.decision_id
+    AND a.restriction <> 'suspended' AND (a.restriction = 'normal' OR (d.stage = 'human' AND d.outcome = 'approved'))
+    AND m.status = 'active' AND m.expires_at > :now AND s.status = 'active'
+    AND (s.trust >= 40 OR (s.trust >= 20 AND d.stage = 'human' AND d.outcome = 'approved')))`;
   const markSigned = sqlite.prepare(`UPDATE payments SET state = 'SIGNED', nonce = :nonce,
     valid_before = :valid_before, authorization_json = :authorization_json, updated_at = :now
-    WHERE id = :payment_id AND state = 'RESERVED'
-      AND EXISTS (SELECT 1 FROM mandates m JOIN decisions d ON d.mandate_id = m.id
-        JOIN sessions s ON s.id = d.session_id WHERE d.id = payments.decision_id
-        AND m.status = 'active' AND m.expires_at > :now AND s.status = 'active'
-        AND (s.trust >= 40 OR (s.trust >= 20 AND d.stage = 'human' AND d.outcome = 'approved')))`);
+    WHERE id = :payment_id AND state = 'RESERVED' AND ${signingAuthority}`);
+  const canSign = sqlite.prepare(
+    `SELECT 1 FROM payments WHERE id = :payment_id AND state = 'RESERVED' AND ${signingAuthority}`,
+  );
   const markSubmitted = transition('SIGNED', 'SUBMITTED');
   const markUnknown = transition('SUBMITTED', 'UNKNOWN');
   // Not a state change: only the first reply is kept, and only once a paid request may have gone out.
@@ -89,6 +94,9 @@ export function createPaymentStore(db: Db, clock: Clock): PaymentStore {
   });
 
   return {
+    async canSign(paymentId) {
+      return Boolean(canSign.get({ payment_id: paymentId, now: clock.now() }));
+    },
     async get(paymentId) {
       const row = selectPayment.get(paymentId);
       return row ? { ...row, payee: row.payee as Address } : null;

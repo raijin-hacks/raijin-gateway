@@ -1,10 +1,12 @@
-# Agent Payment Firewall: Contracts v1.3
+# Agent Payment Firewall: Contracts v1.4
 
 v1.1: added `GET /catalog`, `PaymentStore`, `EndpointMatch`, `JudgeContext`; grant clamping moved to the gateway; `pay()` never marks a payment failed.
 
 v1.2: added `UNCATALOGED_ENDPOINT`, `INTERNAL_ERROR`, nullable `approved.response`, UUIDv4 idempotency headers, and durable pending review handling.
 
 v1.3: `saveResponse` preserves a merchant's 2xx reply before settlement is proven; `GET /agents` and `GET /approvals` expose operator data; cataloged merchants outside `allowed_merchant_ids` deny at pre-contact; unknown endpoints deny with an instruction to add them to the catalog; standing grants are off by default (`STANDING_GRANTS=off`).
+
+v1.4: durable agent restrictions, append-only incidents and restorations, admin `POST /agents/:id/restore`, expanded `GET /agents`, `agent_incident` / `agent_restored` stream events, `AGENT_SUSPENDED` / `AGENT_REVIEW_REQUIRED`, zero approval trust deltas, and `PaymentStore.canSign` before signer invocation.
 
 The single source of truth for all four people. If code and this file disagree, this file wins until the team agrees to change it. Paste the relevant sections into every coding-agent prompt.
 
@@ -64,7 +66,10 @@ CREATE TABLE agents (
   tenant_id TEXT NOT NULL REFERENCES tenants(id),
   role_id TEXT NOT NULL REFERENCES roles(id),
   name TEXT NOT NULL,
-  trust REAL NOT NULL                    -- agent-level score
+  trust REAL NOT NULL,                   -- agent-level score
+  restriction TEXT NOT NULL DEFAULT 'normal',
+  restriction_epoch INTEGER NOT NULL DEFAULT 0,
+  CHECK (restriction IN ('normal','review_required','suspended'))
 );
 
 -- Catalog is loaded from catalog/catalog.json at startup into these tables.
@@ -203,6 +208,29 @@ CREATE TABLE trust_events (
   decision_id TEXT REFERENCES decisions(id),
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE agent_incidents (
+  decision_id TEXT PRIMARY KEY REFERENCES decisions(id),
+  agent_id TEXT NOT NULL REFERENCES agents(id),
+  mandate_id TEXT NOT NULL REFERENCES mandates(id),
+  cause TEXT NOT NULL,
+  previous TEXT NOT NULL,
+  restriction TEXT NOT NULL,
+  restriction_epoch INTEGER NOT NULL,
+  severe INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE agent_restorations (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id),
+  previous TEXT NOT NULL,
+  restriction TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  operator TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 ```
 
 ### Required atomic statements
@@ -276,7 +304,8 @@ Responses: HTTP 200 for decisions; 202 for an in-progress replay handle; 400 for
 
 | Method and path | Caller | Request | Response |
 |---|---|---|---|
-| `GET /agents` | Admin | none | `AgentSummary[]` (persistent agent trust) |
+| `GET /agents` | Admin | none | `AgentSummary[]` (persistent trust, restriction, recent incidents/restorations) |
+| `POST /agents/:id/restore` | Admin | `RestoreAgentRequest` (target, reason, operator) | `RestoreAgentResponse` (audit record) |
 | `POST /mandates` | Admin | `{ agent_id, task, subjects: string[], allowed_merchant_ids: string[], budget, expires_in_ms }` | `{ mandate_id, session_id, token }` (token shown once) |
 | `POST /mandates/:id/close` | Admin | `{}` | `{ ok: true }` (revokes token and grants) |
 | `GET /approvals?status=pending` | Admin | `status=pending` (required) | `PendingApproval[]` (durable reviews in `pay_workflows` state `REVIEW`) |
@@ -294,9 +323,9 @@ mandate and is intentionally not used for this list.
 
 ```json
 [
-  { "id": "agt_bulk", "name": "Bulk loader", "role": "bulk", "trust": 70 },
-  { "id": "agt_logistics", "name": "Logistics analyst", "role": "research", "trust": 70 },
-  { "id": "agt_pricing", "name": "Pricing researcher", "role": "research", "trust": 70 }
+  { "id": "agt_bulk", "name": "Bulk loader", "role": "bulk", "trust": 70, "restriction": "normal", "recent_incidents": [], "recent_restorations": [] },
+  { "id": "agt_logistics", "name": "Logistics analyst", "role": "research", "trust": 70, "restriction": "normal", "recent_incidents": [], "recent_restorations": [] },
+  { "id": "agt_pricing", "name": "Pricing researcher", "role": "research", "trust": 70, "restriction": "normal", "recent_incidents": [], "recent_restorations": [] }
 ]
 ```
 
@@ -331,15 +360,15 @@ an epoch timestamp in milliseconds.
 
 | Stage | Codes |
 |---|---|
-| Pre-contact | `NO_MANDATE`, `QUARANTINED`, `DENYLIST`, `SECRET_IN_URL`, `QUERY_TOO_LONG`, `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `DUPLICATE_PARAM`, `BAD_URL`, `UNCATALOGED_ENDPOINT`, `MERCHANT_NOT_SELECTED` |
+| Pre-contact | `AGENT_SUSPENDED`, `NO_MANDATE`, `QUARANTINED`, `DENYLIST`, `SECRET_IN_URL`, `QUERY_TOO_LONG`, `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `DUPLICATE_PARAM`, `BAD_URL`, `UNCATALOGED_ENDPOINT`, `MERCHANT_NOT_SELECTED` |
 | Quote | `QUOTE_FAILED`, `NOT_402`, `QUOTE_INVALID` |
 | Tier 0 | `NETWORK`, `PAYEE_SWAP`, `PER_CALL_CAP`, `REFERENCE_PRICE`, `PRICE_MISMATCH`, `MANDATE_BUDGET`, `TENANT_DAILY`, `VELOCITY`, `DUPLICATE`, `NEW_PAYEE_LIMIT`, `INTERNAL_ERROR` |
 | Tier 1 (logged on miss; hit approves) | `GRANT_HIT`, `GRANT_NONE`, `GRANT_PRICE`, `GRANT_ENDPOINT`, `GRANT_METHOD`, `GRANT_PARAMS`, `GRANT_TRUST`, `GRANT_EXHAUSTED` |
 | Judge | `JUDGE_APPROVED`, `JUDGE_OFF_TASK`, `JUDGE_OVER_SCOPED`, `JUDGE_UNKNOWN_MERCHANT`, `JUDGE_PRICE_UNUSUAL`, `JUDGE_UNEXPECTED_PARAMS`, `JUDGE_INJECTION_SUSPECTED`, `JUDGE_ERROR`, `JUDGE_INVALID_OUTPUT` |
 | Human | `HUMAN_APPROVED`, `HUMAN_REJECTED`, `HUMAN_TIMEOUT` |
-| Trust routing | `TRUST_REQUIRES_HUMAN` |
+| Trust routing | `TRUST_REQUIRES_HUMAN`, `AGENT_REVIEW_REQUIRED` |
 
-Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `REFERENCE_PRICE`, `NEW_PAYEE_LIMIT`, `TRUST_REQUIRES_HUMAN`. Every other code in those stages denies.
+Which pre-contact and Tier 0 codes escalate instead of deny: `PARAM_NOT_IN_SCHEMA`, `SUBJECT_NOT_IN_MANDATE`, `UNKNOWN_WITH_PARAMS`, `REFERENCE_PRICE`, `NEW_PAYEE_LIMIT`, `TRUST_REQUIRES_HUMAN`, `AGENT_REVIEW_REQUIRED`. Every other code in those stages denies.
 
 An unselected cataloged merchant denies with `MERCHANT_NOT_SELECTED` before any quote. An unknown endpoint denies with `UNCATALOGED_ENDPOINT` and the explanation "add this endpoint to the catalog"; it does not create a review item.
 
@@ -351,7 +380,7 @@ An unselected cataloged merchant denies with `MERCHANT_NOT_SELECTED` before any 
 4. Pre-contact checks. **No network call before this step passes.**
 5. Fetch the 402 quote (A's `getQuote`).
 6. Tier 0, ending with the atomic reservation.
-7. Trust routing: score < 20 deny `QUARANTINED`; 20 to 39 go to human; 40 to 59 skip Tier 1.
+7. Durable agent restriction: `suspended` denies pre-contact with `AGENT_SUSPENDED`; `review_required` disables all grants and queues every purchase reaching authorization with `AGENT_REVIEW_REQUIRED`. Payment approvals do not restore agents. Score routing remains additive: score < 20 deny `QUARANTINED`; 20 to 39 go to human; 40 to 59 skip Tier 1.
 8. Tier 1 grant lookup. Per-mandate grants remain available. Standing grants are skipped unless `STANDING_GRANTS=on`; the default is `off`. The pre-contact merchant-selection rule applies before any grant lookup.
 9. Judge (C's module).
 10. Human queue if escalated (10-minute timeout, then `HUMAN_TIMEOUT`, reservation released).
@@ -525,17 +554,20 @@ export type HttpMethod = 'GET' | 'POST';
 export type Stage = 'precontact' | 'tier0' | 'tier1' | 'judge' | 'human';
 export type PaymentState = 'RESERVED' | 'SIGNED' | 'SUBMITTED' | 'SETTLED' | 'FAILED' | 'UNKNOWN';
 
-export type PrecontactCode = 'NO_MANDATE' | 'QUARANTINED' | 'DENYLIST' | 'SECRET_IN_URL' | 'QUERY_TOO_LONG'
-  | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL' | 'UNCATALOGED_ENDPOINT';
+export type RestrictionState = 'normal' | 'review_required' | 'suspended';
+export type IncidentCode = 'JUDGE_INJECTION_SUSPECTED' | 'PAYEE_SWAP' | 'PRICE_MISMATCH' | 'HUMAN_REJECTED' | 'JUDGE_OFF_TASK';
+
+export type PrecontactCode = 'AGENT_SUSPENDED' | 'NO_MANDATE' | 'QUARANTINED' | 'DENYLIST' | 'SECRET_IN_URL' | 'QUERY_TOO_LONG'
+  | 'PARAM_NOT_IN_SCHEMA' | 'SUBJECT_NOT_IN_MANDATE' | 'UNKNOWN_WITH_PARAMS' | 'DUPLICATE_PARAM' | 'BAD_URL' | 'UNCATALOGED_ENDPOINT' | 'MERCHANT_NOT_SELECTED';
 export type QuoteCode = 'QUOTE_FAILED' | 'NOT_402' | 'QUOTE_INVALID';
 export type Tier0Code = 'NETWORK' | 'PAYEE_SWAP' | 'PER_CALL_CAP' | 'REFERENCE_PRICE' | 'PRICE_MISMATCH'
   | 'MANDATE_BUDGET' | 'TENANT_DAILY' | 'VELOCITY' | 'DUPLICATE' | 'NEW_PAYEE_LIMIT' | 'INTERNAL_ERROR';
 export type Tier1Code = 'GRANT_HIT' | 'GRANT_NONE' | 'GRANT_PRICE' | 'GRANT_ENDPOINT' | 'GRANT_METHOD'
-  | 'GRANT_PARAMS' | 'GRANT_TRUST' | 'GRANT_EXHAUSTED' | 'MERCHANT_NOT_SELECTED';
+  | 'GRANT_PARAMS' | 'GRANT_TRUST' | 'GRANT_EXHAUSTED';
 export type JudgeCode = 'JUDGE_APPROVED' | 'JUDGE_OFF_TASK' | 'JUDGE_OVER_SCOPED' | 'JUDGE_UNKNOWN_MERCHANT'
   | 'JUDGE_PRICE_UNUSUAL' | 'JUDGE_UNEXPECTED_PARAMS' | 'JUDGE_INJECTION_SUSPECTED' | 'JUDGE_ERROR' | 'JUDGE_INVALID_OUTPUT';
 export type HumanCode = 'HUMAN_APPROVED' | 'HUMAN_REJECTED' | 'HUMAN_TIMEOUT';
-export type ReasonCode = PrecontactCode | QuoteCode | Tier0Code | Tier1Code | JudgeCode | HumanCode | 'TRUST_REQUIRES_HUMAN';
+export type ReasonCode = PrecontactCode | QuoteCode | Tier0Code | Tier1Code | JudgeCode | HumanCode | 'TRUST_REQUIRES_HUMAN' | 'AGENT_REVIEW_REQUIRED';
 
 // ---------- /pay ----------
 export interface PayRequest {
@@ -599,6 +631,7 @@ export interface PaymentsModule {
 // Every method is a conditional update on the current state and returns false if it changed nothing.
 // pay() never calls fail(): a merchant's rejection proves nothing while a signed authorization is still valid.
 export interface PaymentStore {
+  canSign(paymentId: string): Promise<boolean>; // durable authority before invoking signer; markSigned checks again atomically
   get(paymentId: string): Promise<{ id: string; mandate_id: string; amount: Money; payee: Address; state: PaymentState;
     nonce: string | null; valid_before: EpochMs | null; authorization_json: string | null } | null>;
   markSigned(paymentId: string, f: { nonce: string; validBefore: EpochMs; authorizationJson: string }): Promise<boolean>; // RESERVED -> SIGNED
@@ -664,6 +697,8 @@ export interface JudgeModule {
 
 // ---------- Dashboard stream ----------
 export type StreamEvent =
+  | { type: 'agent_incident'; agent_id: string; decision_id: string; mandate_id: string; cause: IncidentCode; previous: RestrictionState; restriction: RestrictionState; at: EpochMs }
+  | { type: 'agent_restored'; agent_id: string; restoration_id: string; previous: RestrictionState; restriction: RestrictionState; reason: string; operator: string; at: EpochMs }
   | { type: 'decision'; decision_id: string; mandate_id: string; stage: Stage; outcome: 'approved' | 'denied' | 'pending';
       reasons: ReasonCode[]; price: Money | null; latency_ms: number; at: EpochMs }
   | { type: 'payment'; payment_id: string; state: PaymentState; amount: Money; at: EpochMs }
@@ -682,3 +717,57 @@ No one changes a contract silently inside their own module.
 ## v1.3 contract changes
 
 `UNCATALOGED_ENDPOINT` remains a pre-contact reason but now denies without review. `MERCHANT_NOT_SELECTED` is a pre-contact denial before quote contact. `STANDING_GRANTS=off` skips standing grants and lets Tier 1 continue to the judge; explicitly setting it to `on` enables them. The v1.3 contract also records the already-implemented `PaymentStore.saveResponse`, `GET /agents`, and `GET /approvals` changes. `/pay` requires the existing body key and a matching UUIDv4 `Idempotency-Key` header; conflicts return 409, in-progress replays return 202 with the existing pending handle. Other decision responses remain 200. Human approvals are request scoped and cannot override hard checks.
+
+
+## v1.4 restriction and restoration contract
+
+`GET /agents` is admin only. Each entry includes `restriction: RestrictionState`, `recent_incidents: AgentIncident[]` and `recent_restorations: AgentRestoration[]`, newest first (timestamp then insertion order), at most ten of each. The dashboard displays the latest three incidents and latest restoration. Histories remain append-only in SQLite; UPDATE and DELETE triggers protect both audit tables. Incidents use the decision ID as primary key; decision retries and human resumes cannot count twice.
+
+```ts
+export interface AgentIncident {
+  decision_id: string; mandate_id: string; cause: IncidentCode;
+  previous: RestrictionState; restriction: RestrictionState; created_at: EpochMs;
+}
+export interface AgentRestoration {
+  id: string; previous: RestrictionState; restriction: RestrictionState;
+  reason: string; operator: string; created_at: EpochMs;
+}
+export interface RestoreAgentRequest {
+  target: 'normal' | 'review_required'; reason: string; operator: string;
+}
+export interface RestoreAgentResponse extends AgentRestoration { agent_id: string; }
+```
+
+### `POST /agents/:id/restore` request
+
+Admin bearer authentication is required (401 missing, 403 wrong/agent token). The existing dashboard proxy additionally requires an operator session and same-origin writes. `operator` is a required, self-attested name under shared-admin authentication, not a verified individual identity. Required nonblank reason is at most 500 characters; operator at most 100. Unknown fields, invalid states, or malformed JSON return 400. Unknown agent returns 404. Target must be less restrictive, or equal when numeric scores/quarantine need recovery (otherwise 409); no-op and downward requests are rejected. This allows explicit recovery from nonincident score penalties even when the restriction state remains normal. The response is the durable audit record (200).
+
+```json
+{ "target": "normal", "reason": "Removed the poisoned source and inspected the agent", "operator": "Demo operator" }
+```
+
+### `POST /agents/:id/restore` response
+
+```json
+{ "id": "f54d07f4-bf8b-4930-8ddc-a641ebead230", "agent_id": "agt_pricing", "previous": "review_required", "restriction": "normal", "reason": "Removed the poisoned source and inspected the agent", "operator": "Demo operator", "created_at": 1800000000000 }
+```
+
+Restoration atomically records the audit, changes restriction, increments the agent's incident epoch, restores its score to the role baseline and clears quarantine/restores scores on unended sessions under active, unexpired mandates. It never reopens ended sessions, revoked/expired mandates, changes budgets, subjects, role caps or liabilities, or replays denied decisions. Restoring to `review_required` retains mandatory human review. Incidents from earlier epochs remain visible but cannot immediately re-suspend a restored agent. Only this endpoint performs upward transitions; a payment approval never does.
+
+A first injection flag, `PAYEE_SWAP`, `PRICE_MISMATCH`, or `HUMAN_REJECTED` incident moves normal to review_required. Two security incidents in the same mandate and epoch suspend when already under review. `JUDGE_OFF_TASK` records a review signal but never contributes to suspension, even with a severe classification. Its numeric penalty is floored at 20 (without raising an already lower score), so it cannot itself quarantine. A trusted internal severe-security classification suspends directly; no existing detector is newly classified severe because the design specifies none. No public/agent input can set severity. Infrastructure/quote errors, malformed input and pre-contact denials are not incidents and do not lower scores. Other valid Tier 0 denials keep existing score penalties without creating security incidents.
+
+All automatic score deltas are nonpositive. Durable state is read before contact, grant use, final approval, human resume, restart recovery and signing. The final approval and `markSigned` guards run in their respective atomic SQLite writes. `canSign` also checks immediately before invoking the signer. A restriction during an asynchronous signer call prevents storing/submitting its result; it cannot recall a signature already issued by the external signer. Submitted liabilities remain reserved and reconciled. Recovery never reauthorizes an unsigned approved payment.
+
+### Restriction stream examples
+
+```json
+{ "type": "agent_incident", "agent_id": "agt_pricing", "decision_id": "dec_example", "mandate_id": "mnd_example", "cause": "JUDGE_INJECTION_SUSPECTED", "previous": "normal", "restriction": "review_required", "at": 1800000000000 }
+```
+
+### Restoration stream example
+
+```json
+{ "type": "agent_restored", "agent_id": "agt_pricing", "restoration_id": "f54d07f4-bf8b-4930-8ddc-a641ebead230", "previous": "review_required", "restriction": "normal", "reason": "Removed the poisoned source and inspected the agent", "operator": "Demo operator", "at": 1800000000000 }
+```
+
+These events publish after commit. SSE is a live notification channel, not durable replay; `GET /agents` provides persisted audit history after reconnect/restart.

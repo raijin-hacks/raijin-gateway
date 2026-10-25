@@ -36,18 +36,18 @@ export const TRUST_THRESHOLDS = {
 } as const;
 
 /**
- * Trust changes per event (Design.md "Trust scoring"). Session scores never rise above the
- * agent score, and agent scores never rise above the role baseline.
+ * Automatic trust changes are nonpositive. Only audited operator restoration can reset
+ * scores to the role baseline. Zero approval entries preserve caller compatibility.
  */
 export const TRUST_DELTAS = {
-  /** Approved by a grant or by the judge. */
-  approved: { session: 1, agent: 0.2 },
+  /** Approvals never earn trust back. */
+  approved: { session: 0, agent: 0 },
   tier0Denial: { session: -5, agent: -1 },
   judgeOffTask: { session: -15, agent: -3 },
   /** Also quarantines the session immediately. */
   judgeInjection: { session: -30, agent: -5 },
   humanRejected: { session: -20, agent: -5 },
-  humanApproved: { session: 2, agent: 0 },
+  humanApproved: { session: 0, agent: 0 },
 } as const;
 
 /** Pre-contact checks (CHUNK-2-GATEWAY.md G5). */

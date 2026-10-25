@@ -1,12 +1,12 @@
 # Trust design: tightening-only restriction
 
-Oct 24, 2026 · Status: **proposed** (not implemented) · Owner: Chunk 2 (pipeline/policy), with Chunk 3 (eval) and Chunk 4 (pitch)
+Oct 24, 2026 · Status: **implemented** · Owner: Chunk 2 (pipeline/policy), with Chunk 3 (eval) and Chunk 4 (pitch)
 
 Sources: [`critic.md`](../critic.md) Part 3, [`Design.md`](Design.md) (trust section), and a read-only review of `origin/main` at `f121f17`. Line references below are to that revision.
 
 ## Summary
 
-Trust in this project is a **heuristic routing score**, not a permission system. Today it moves both ways: denials lower it, and approvals raise it again. The proposal here keeps the idea the team liked ("start every agent conservative, get stricter after mistakes") but makes it **monotonic**: automation can only tighten an agent's treatment, and only an explicit, audited human action can loosen it.
+Trust in this project is a **heuristic routing score**, not a permission system. At the historical baseline it moved both ways: denials lowered it, and approvals raised it again. The implementation keeps the idea the team liked ("start every agent conservative, get stricter after mistakes") but makes it **monotonic**: automation can only tighten an agent's treatment, and only an explicit, audited human action can loosen it.
 
 The rule this doc adopts:
 
@@ -14,7 +14,7 @@ The rule this doc adopts:
 
 This is supporting policy, not the headline. It buys consistency and a truthful pitch, not a large novelty bonus.
 
-## What the code does today
+## Historical baseline at f121f17 (before this implementation)
 
 | Area | Current behavior on `main` | Where |
 |---|---|---|
@@ -25,7 +25,7 @@ This is supporting policy, not the headline. It buys consistency and a truthful 
 | Persistence | Agent trust persists across mandates; new mandates inherit it. A downgrade updates the agent and the triggering session only, not the agent's other open sessions. | [`routes/mandates.ts:34–45`](../apps/gateway/src/routes/mandates.ts), [`pipeline/policy.ts:318–330`](../apps/gateway/src/pipeline/policy.ts) |
 | Money | Trust never lowers per-call limits; role caps are fixed. | `pipeline/policy.ts` |
 
-**Consequence for the pitch:** the Devpost line "trust only ever tightens" is **false today**, because approvals add points back ([`demo/DEVPOST.md:29`](../demo/DEVPOST.md)). Either implement this doc or change that line.
+**Consequence for the pitch:** the Devpost line "trust only ever tightens" was **false at that baseline**, because approvals added points back ([`demo/DEVPOST.md:29`](../demo/DEVPOST.md)). Either implement this doc or change that line.
 
 ## Why the larger trust ideas were cut
 
@@ -38,7 +38,7 @@ From the team proposal (`design-docs/local/proposal-plan-lock.md`) and critic Pa
 
 Critic Part 3's recommended reading is already the one adopted here: human-approved authority is immutable; trust may add friction or suspend; only humans change scope.
 
-## Proposed policy
+## Implemented policy
 
 ### States
 
@@ -101,9 +101,17 @@ A separate, authenticated, audited operator action (for example `POST /agents/:i
 
 **Risks:** false positives punishing legitimate agents (mitigated by the incident taxonomy and the off-task-as-signal rule), approval-queue spam, and added policy surface.
 
-## Decision for the freeze
+## Implementation details and clarifications
 
-- **If an owner can finish it cleanly before the freeze:** do only steps 1–4 plus the tests (the monotonic correction and enforcement checks). Skip restoration UI if needed; restoration can be an admin API call.
-- **Otherwise:** defer the feature and **fix the pitch**: remove "trust only ever tightens" from `demo/DEVPOST.md` and the script, or describe today's behavior accurately ("trust drops sharply on incidents and adds review; it never raises spending limits").
+The full scope is implemented, including the admin restoration endpoint, dashboard control, incident history, event contracts and offline rehearsal. Contracts are v1.4. Run `pnpm trust:rehearse` or `pnpm agent:rehearse` for the scripted mock-payment beat.
 
-Either way, keep trust out of the headline. The complete demo and external evidence matter more to the score.
+- Suspension means two security incidents in the same mandate since the last restoration. Off-task rows never count. Dedup is per decision, including a later human rejection of an already recorded off-task review; that decision contributes only its first signal.
+- The proposal did not identify a separate severe detector. The internal incident transition supports severe security incidents (tested), but no listed first incident is silently promoted to severe. Agent and public API inputs cannot set severity.
+- Existing numeric penalties remain; approval deltas are zero. Off-task penalties stop at 20 without raising lower scores, preserving the explicit review-only rule. Quote/infrastructure errors no longer incur the old catch-all Tier 0 penalty.
+- Restoration requires a less restrictive target (or the same target when heuristic scores/quarantine need recovery), reason and operator name. It also explicitly resets heuristic scores and clears quarantine on unended sessions in active mandates, so restoration actually permits work again. It never reopens expired/closed mandates or changes their authority. Incident epochs prevent pre-restoration history from immediately undoing a restoration.
+- Shared admin authentication establishes the admin principal. Operator names are self-attested, as the existing dashboard login has no named-user accounts. The immutable audit stores the name and reason, and the server log records the admin principal.
+- SQLite triggers enforce append-only incidents and restorations. The migration adds a checked state column without rebuilding the referenced agents table. GET /agents exposes the ten latest incidents and restorations; the dashboard refreshes from this durable source, including after missed stream events.
+- Durable guards run before contact, grants, final authorization, human resume, recovery, immediately before signing, and atomically when recording SIGNED. A restriction during an external signing call prevents storing/submitting the result; already-issued signatures cannot be recalled. Submitted/unknown payments remain reconciled and reserved.
+- Injection still quarantines the triggering session. The demo shows another already-open session of the same agent entering review; restoration explicitly clears the quarantine. The offline rehearsal uses an explicit injection-flag stub and does not claim live detection of attacker prose (the judge never sees page text).
+
+Acceptance coverage lives in `apps/gateway/test/http/trust-restriction.test.ts`, `apps/agent/src/trust-rehearsal.test.ts`, the payment-store/signer tests and doc-driven contract tests. Existing approval/replay tests now expect zero reward events; concurrent incident tests expect the durable `AGENT_REVIEW_REQUIRED` reason instead of score-only routing. No live eval labels, judge prompt, CDP policy or agent tool behavior was changed.

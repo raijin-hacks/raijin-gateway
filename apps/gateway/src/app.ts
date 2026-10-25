@@ -7,7 +7,7 @@ import { closeMandate, createMandate } from './routes/mandates.js';
 import { stream } from './routes/stream.js';
 import { createPipeline } from './pipeline/index.js';
 import { approvalRoute, decisionRoute, payRoute, paymentRoute, pollAuth } from './routes/pay.js';
-import { agentsRoute, approvalsRoute } from './routes/operators.js';
+import { agentsRoute, approvalsRoute, restoreAgentRoute } from './routes/operators.js';
 
 export type { AppEnv } from './deps.js';
 
@@ -44,6 +44,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.post('/mandates', admin, createMandate(deps));
   app.post('/mandates/:id/close', admin, closeMandate({ ...deps, pipeline }));
   app.get('/catalog', admin, (c) => c.json(deps.catalog));
+  app.post('/agents/:id/restore', admin, restoreAgentRoute(deps));
   app.get('/agents', admin, agentsRoute(deps));
   app.get('/approvals', admin, approvalsRoute(deps));
   app.get('/stream', admin, stream(deps));

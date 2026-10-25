@@ -130,13 +130,13 @@ This answers the one-pager's cache-safety question. The table below lists each a
 
 ### Trust score
 
-A number that sets how much scrutiny a session gets. It only ever tightens controls; it never grants more than the role allows.
+A heuristic that sets how much scrutiny a session gets. Automation only tightens controls; explicit audited operator restoration can loosen them. It never grants more than the role allows.
 
 - Tracked per session (resets when a new session starts) and per agent (persists, moves less).
 - Session score starts at the agent score, which starts at the role baseline.
 - **High trust never raises limits above the role ceiling.** It only decides whether grants are usable without a fresh judge check.
 - Low trust removes grant use, then forces human review, then quarantines the session.
-- Recovers toward baseline slowly, never above it.
+- No automatic recovery. Only audited operator restoration loosens durable restrictions or resets scores to baseline; see `trust-design.md`.
 - **Never shown to the judge.** Trust changes which tier sees a payment, never what the judge decides. Otherwise low trust makes the judge stricter, which lowers trust further, and high trust makes it lenient exactly when an attacker strikes.
 
 ## Architecture and decision pipeline
@@ -249,12 +249,12 @@ A model decides whether the payment serves the mandate. It returns structured JS
 
 | Event | Session change | Agent change |
 | --- | --- | --- |
-| Approved by grant or judge | +1, up to agent score | +0.2, up to baseline |
+| Approved by grant or judge | 0 | 0 |
 | Tier 0 denial | −5 | −1 |
 | Judge deny: off-task | −15 | −3 |
 | Judge flags injection | −30, quarantine session | −5 |
 | Human rejects escalation | −20 | −5 |
-| Human approves escalation | +2 | 0 |
+| Human approves escalation | 0 | 0 |
 
 | Session score | Behavior |
 | --- | --- |
@@ -262,6 +262,8 @@ A model decides whether the payment serves the mandate. It returns structured JS
 | 40 to 59 | Grants ignored; every new payment goes to the judge |
 | 20 to 39 | Every payment goes to a human |
 | < 20 | Quarantined; all payments denied |
+
+Durable per-agent `normal`, `review_required`, and `suspended` restrictions additionally apply to all sessions and mandates. Only the restoration endpoint loosens them. Off-task penalties cannot lower a score below 20; they signal review, never suspension. Infrastructure/quote failures and pre-contact denials have no score penalty.
 
 Role baseline: 70 for the research agent (*tunable*). Keep the formula on the dashboard; judges will ask.
 
