@@ -9,6 +9,10 @@ import { createTokenClient } from './gateway.js';
 import type { Journal } from './journal.js';
 
 export const OUTPUT_BYTES = 16000;
+// Total time one paid_fetch may spend, across retries and polls, before reporting its last status.
+export const PURCHASE_DEADLINE_MS = 45000;
+// Status checks per purchase while it is pending or unknown (about 2 s apart in practice).
+export const MAX_POLLS = 15;
 export function boundedText(value: string, secrets: string[] = [], limit = OUTPUT_BYTES) {
   for (const secret of secrets) if (secret) value = value.split(secret).join('[REDACTED]');
   let output = new TextDecoder().decode(Buffer.from(value).subarray(0, limit));
@@ -138,7 +142,8 @@ export function createTools(options: {
       // Exact repeated tool arguments represent a retry, in this process or after a restart.
       const request = durableRequest(value);
       const started = performance.now();
-      const remaining = () => Math.max(1, 15000 - (performance.now() - started));
+      // A real-mode purchase (judge, CDP signing, on-chain settlement) can take 10-25 s end to end.
+      const remaining = () => Math.max(1, PURCHASE_DEADLINE_MS - (performance.now() - started));
       async function bounded<T>(work: Promise<T>): Promise<T> {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -152,12 +157,21 @@ export function createTools(options: {
           clearTimeout(timer);
         }
       }
-      for (let attempt = 0; attempt < 3 && performance.now() - started < 15000; attempt++) {
+      for (
+        let attempt = 0;
+        attempt < 3 && performance.now() - started < PURCHASE_DEADLINE_MS;
+        attempt++
+      ) {
         try {
           let response = await bounded(client.pay(request));
           for (
             let poll = 0;
-            poll < 3 && ['pending', 'payment_unknown'].includes(response.status);
+            // The gateway answers pending at once and settles later; keep asking while there is
+            // time for another wait and request, so the last status is returned rather than lost.
+            // An unknown payment resolves only on chain, often minutes later: don't wait as long.
+            poll < (response.status === 'pending' ? MAX_POLLS : 3) &&
+            remaining() > 7000 &&
+            ['pending', 'payment_unknown'].includes(response.status);
             poll++
           ) {
             trace('payment: awaiting existing decision');

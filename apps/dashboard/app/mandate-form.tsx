@@ -44,8 +44,13 @@ export default function MandateForm() {
   }, []);
 
   function addSubject() {
-    const s = subjectInput.trim().toLowerCase(); // gateway normalizes the same way
-    if (s && !subjects.includes(s)) setSubjects([...subjects, s]);
+    // "acme, globex" adds two subjects: one comma-joined subject would match no request.
+    const next = [...subjects];
+    for (const part of subjectInput.split(',')) {
+      const s = part.trim().toLowerCase(); // gateway normalizes the same way
+      if (s && !next.includes(s)) next.push(s);
+    }
+    setSubjects(next);
     setSubjectInput('');
   }
 

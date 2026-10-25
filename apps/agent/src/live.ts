@@ -23,7 +23,8 @@ async function main() {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       redirect: 'error',
-      signal: AbortSignal.timeout(10000),
+      // A final answer over several purchases can take longer than 10 s to generate.
+      signal: AbortSignal.timeout(60000),
       headers: {
         'content-type': 'application/json',
         'x-api-key': ANTHROPIC_API_KEY,
