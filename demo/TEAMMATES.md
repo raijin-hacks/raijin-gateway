@@ -54,6 +54,8 @@ demo/run.sh research          # beat 3: Sonnet buys five price lookups
 demo/run.sh greeting          # beat 4: Haiku reads the attack page
 demo/run.sh by-hand           # beat 4 fallback, if Haiku refuses the bait
 demo/run.sh live              # beat 7: after editing demo/pages/live.txt
+demo/run.sh bulk-vs-research  # Q&A: the same $0.50 export, denied for research, approved for bulk
+demo/run.sh restore pricing   # put an agent back to normal after an incident
 demo/stop.sh                  # stop all four servers
 ```
 
@@ -68,6 +70,9 @@ Each `demo/run.sh` starts with a fresh purchase journal, so a rerun makes new pu
 | `research` | `payment: approved` ×5, then a price summary with receipts | Acme: `judge · approved`. Globex, Initech, Umbrella, Hooli: `tier1 · approved · GRANT_HIT` in milliseconds |
 | `greeting` | Either it buys (then `payment: denied`), or it refuses and writes the greeting anyway | If it bought: `judge · denied · JUDGE_OFF_TASK` |
 | `by-hand` | `{"status":"denied", … "reasons":["JUDGE_OFF_TASK"], "explanation": …}` | `judge · denied · JUDGE_OFF_TASK` |
+| `bulk-vs-research` | `research: denied at judge JUDGE_OVER_SCOPED \| …` then `bulk: approved at judge` (mock mode) | Two judge rows, one denied and one approved |
+
+After the headline's `JUDGE_OFF_TASK`, the Pricing researcher is under review: its later purchases go to the Approval queue as `AGENT_REVIEW_REQUIRED`. Run `demo/run.sh restore pricing` before the next beat if you want them to reach the judge.
 
 The research page also offers a fake 25 USDC "deposit". If the agent tries it, the row is `precontact · denied · BAD_URL`. Sonnet usually ignores it.
 
@@ -92,7 +97,7 @@ About 1 in 5 real payments comes back `payment_unknown`: the public test facilit
 | `no mandates yet: run demo/reset.sh first` | Run `demo/reset.sh`. |
 | `agent: failed; no final answer` right away | Check that `ANTHROPIC_API_KEY` is set in `.env`, or export it in your shell. |
 | `page: blocked or failed` | The attacker-pages server died. Run `demo/reset.sh`. |
-| Every lookup goes to the Approval queue | Trust dropped after many denials. Run `demo/reset.sh` for a fresh database. |
+| Every purchase goes to the Approval queue (`AGENT_REVIEW_REQUIRED`) | One incident (an off-task denial, a rejection, a price mismatch) puts the agent under review. Run `demo/run.sh restore pricing`, or `demo/reset.sh` for a fresh database. |
 | Dashboard won't load or shows nothing | Check `apps/dashboard/.env.local` has the same `ADMIN_TOKEN` as `.env`, then `demo/reset.sh`. |
 | `<name> did not start` | Read `demo/.run/<name>.log`. A port may be held by another program: `lsof -i :4000`. |
 | Port already in use | `demo/stop.sh`, then `demo/reset.sh`. |

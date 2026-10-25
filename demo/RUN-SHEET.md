@@ -23,6 +23,10 @@ What to type on demo day, in order. Run every command from the repo root. First 
 | 5 · CDP refuses | `pnpm --filter @apf/gateway payments:cdp-spike bypass` | Terminal: `403 policy_violation` |
 | 7 · Live attack | Judges edit `demo/pages/live.txt` and save; then `demo/run.sh live` | Whatever they wrote: pre-contact deny, judge, or queue |
 
+**Before beat 7, decide about the agent's restriction.** The headline's `JUDGE_OFF_TASK` is an incident: the gateway puts *Pricing researcher* under review, and every later purchase it makes goes straight to the Approval queue (`AGENT_REVIEW_REQUIRED`). Either narrate that ("one off-task attempt and this agent needs a human for everything"), or run `demo/run.sh restore pricing` first so the judges' attacks reach the judge.
+
+**Q&A, "isn't this just a blocklist?":** `demo/run.sh bulk-vs-research` sends the same $0.50 full export on two mandates. The researcher is denied `JUDGE_OVER_SCOPED` and the bulk loader is approved, for the same URL, price and merchant. Mock payments only: the CDP policy signs at most 1 cent.
+
 Skipping the live mandate in beat 2? `demo/run.sh research` uses the one `demo/reset.sh` created.
 
 **Research mandate** (beat 2): agent *Pricing researcher*; task `Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.`; subjects `acme, globex, initech, umbrella, hooli` + Enter (five chips); PriceScope only; budget `2.00`; expiry `30`.
@@ -43,6 +47,7 @@ If a purchase lands in the **Approval queue**, the agent waits about 40 s: type 
 | Problem | Do this |
 | --- | --- |
 | Anything stuck or a server down | `demo/reset.sh` (then create the beat-2 mandate again) |
+| Every purchase says `AGENT_REVIEW_REQUIRED` | An earlier incident put the agent under review: `demo/run.sh restore pricing` |
 | `payment_unknown` on a real payment | The test facilitator failed to settle it; nothing was paid. Say so and move on |
 | Agent ignores the bait | `demo/run.sh by-hand` and say it was sent directly |
 | Judge model API down | Rows say `JUDGE_ERROR`: play the backup video |

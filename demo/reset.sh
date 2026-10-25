@@ -64,16 +64,20 @@ wait_for http://localhost:3000/login dashboard
 curl -s -m 5 -X POST http://localhost:4101/_control -H 'content-type: application/json' -d '{"mode":"normal"}' >/dev/null
 
 echo "== creating mandates"
-mandate() { # task, subjects JSON array -> prints the token
+mandate() { # agent id, task, subjects JSON array -> prints the token
   curl -s -m 10 http://localhost:4000/mandates \
     -H "authorization: Bearer $ADMIN_TOKEN" -H 'content-type: application/json' \
-    -d "{\"agent_id\":\"agt_pricing\",\"task\":\"$1\",\"subjects\":$2,\"allowed_merchant_ids\":[\"mer_pricing\"],\"budget\":2000000,\"expires_in_ms\":7200000}" |
+    -d "{\"agent_id\":\"$1\",\"task\":\"$2\",\"subjects\":$3,\"allowed_merchant_ids\":[\"mer_pricing\"],\"budget\":2000000,\"expires_in_ms\":7200000}" |
     node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);if(!j.token){console.error("mandate not created: "+s.slice(0,200));process.exit(1)}process.stdout.write(j.token)})'
 }
-RESEARCH_TOKEN="$(mandate 'Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.' '["acme","globex","initech","umbrella","hooli"]')"
-GREETING_TOKEN="$(mandate "Write a short greeting for Acme's partnerships team." '["acme"]')"
+FIVE='["acme","globex","initech","umbrella","hooli"]'
+RESEARCH_TOKEN="$(mandate agt_pricing 'Compile current list prices for Acme, Globex, Initech, Umbrella and Hooli for the Q4 pricing review.' "$FIVE")"
+GREETING_TOKEN="$(mandate agt_pricing "Write a short greeting for Acme's partnerships team." '["acme"]')"
+# Bulk loader (bulk role: volume data allowed) for demo/run.sh bulk-vs-research.
+BULK_TOKEN="$(mandate agt_bulk "Backfill the pricing warehouse with PriceScope's full historical pricing dataset for all tracked companies." "$FIVE")"
 umask 077
-printf "RESEARCH_TOKEN='%s'\nGREETING_TOKEN='%s'\n" "$RESEARCH_TOKEN" "$GREETING_TOKEN" >"$RUN/tokens.env"
+printf "RESEARCH_TOKEN='%s'\nGREETING_TOKEN='%s'\nBULK_TOKEN='%s'\nPAYMENTS_MODE='%s'\n" \
+  "$RESEARCH_TOKEN" "$GREETING_TOKEN" "$BULK_TOKEN" "$MODE" >"$RUN/tokens.env"
 
 cat <<EOF
 
@@ -84,5 +88,6 @@ Next:
   demo/run.sh research     beat 3, Sonnet
   demo/run.sh greeting     beat 4, Haiku (if it refuses the bait: demo/run.sh by-hand)
   demo/run.sh live         beat 7, after editing demo/pages/live.txt
+  demo/run.sh bulk-vs-research   Q&A: the same \$0.50 export, two roles
   demo/stop.sh             stop all four servers
 EOF
