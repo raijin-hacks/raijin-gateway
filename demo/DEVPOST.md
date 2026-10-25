@@ -12,6 +12,10 @@ Raijin Gateway
 
 Spending caps check how much an agent pays. We check *why*.
 
+## Elevator
+
+Raijin is an x402 gateway to stop agent payment fraud before signing. Code checks payments against a human-approved task, a judge never sees attacker text, misses cut autonomy, CDP caps signatures.
+
 ## Inspiration
 
 AI agents now pay for APIs on their own over x402: fractions of a cent per call, signed automatically. Every control we found answers *how much* (Coinbase Agentic Wallets, Ramp and Mercury agent cards) or *to whom* (payee checks). None of them asks whether a payment serves the task the agent was given. So a prompt-injected agent making a small, plausible, off-task purchase gets through every one of them.
@@ -23,7 +27,7 @@ A gateway that sits between an agent and its money. A human creates a **mandate*
 1. **Pre-contact check.** Before the gateway contacts anyone, the URL is canonicalized and matched to the merchant catalog. Secrets in the URL, undeclared parameters, and subjects outside the mandate are stopped here.
 2. **Hard rules (Tier 0).** Network, payee swaps, per-call caps, reference-price jumps, budget and velocity. The budget is reserved atomically before anything is signed.
 3. **Grants (Tier 1).** An exact-match permission from an earlier approval: same mandate, payee, method, endpoint and parameter values. A hit approves the payment in milliseconds.
-4. **Task judge (Tier 2).** An LLM asks one question: would someone doing exactly this task need this purchase? **It never reads attacker-written text.** It sees the human's task, the admin's catalog labels, a price and counts. URLs from unknown merchants arrive as segment lengths only.
+4. **Task judge (Tier 2).** An LLM asks one question: would someone doing exactly this task need this purchase? **It never reads attacker-written text.** It sees the human's task, the admin's catalog labels, a price and counts. Unknown hosts and routes deny at admission and never reach the judge.
 5. **Human review (Tier 3).** Escalations wait in a dashboard queue for an approval or rejection with a note.
 
 Durable per-agent restrictions only tighten automatically: defined incidents require review, and repeated security incidents suspend purchases across sessions and mandates. Clean payments never earn trust back. Only an explicit admin restoration with an operator name and reason loosens restrictions. The judge never sees trust. The dashboard shows restriction state, recent incidents, restoration controls, live decisions and the approval queue; the historical trust graph remains hidden.
@@ -35,7 +39,7 @@ Durable per-agent restrictions only tighten automatically: defined incidents req
 - **Gateway:** TypeScript, Hono, SQLite with Drizzle. Atomic SQL for reservations, settlement and grant use.
 - **Payments:** x402 (`@x402/core`, `@x402/fetch`, `@x402/evm`, `@x402/express`), viem, USDC on Base Sepolia through the public x402.org test facilitator (not CDP's facilitator). Includes a payment lifecycle and a reconciler, so a lost settlement response or a crash never overspends.
 - **Signer:** a Coinbase CDP server account (`@coinbase/cdp-sdk`) under an attached signing policy, with separate admin and runtime keys. The gateway never falls back to a local key if CDP refuses or times out.
-- **Judge:** Claude, temperature 0, pinned model, 5-second timeout, output validated with zod. Any error is a denial.
+- **Judge:** Claude via native `fetch` to the Anthropic API (not the SDK), temperature 0, pinned model, 5-second timeout, output validated with zod. Any error is a denial. A plan drafter and escalation explainer exist as advisory APIs with a CLI; they are not wired into the dashboard or `/pay`.
 - **Dashboard:** Next.js with server-sent events. The admin token stays on the server. Agent restriction state and audited restoration are shown; the historical trust graph is not.
 - **Test merchants:** one honest x402 seller, PriceScope, serving synthetic price data on `http://localhost:4101` (a loopback exception in the gateway's destination rules, not HTTPS), and an attacker server on `localhost:4199` with injected pages. The attacker server isn't in the catalog, so the gateway never contacts it.
 - **Contracts first:** one shared types package, with the judge's input fixed by contract so that no code path can add attacker text to it.
@@ -83,7 +87,10 @@ All on Base Sepolia, a test network whose USDC has no cash value:
 
 ## Challenges we ran into
 
-- [Fill in from the team.] Candidates: getting the first x402 payment to settle, keeping attacker text out of the judge while still giving it enough to decide, and judge-only attacks that kept getting caught by the rules.
+- The judge has to decide task-relevance without reading the page, the URL, or the merchant's 402 text. Too little signal and it cannot tell a needed lookup from an off-task one; too much and it can be injected. Most attacks we wrote for it never reached it: unknown hosts, secrets in URLs, and unselected merchants die at pre-contact.
+- The first on-chain settle failed because the public x402.org facilitator hit a nonce collision on its gas wallet, not because our signer was wrong. A retry landed. That is why an ambiguous outcome stays `UNKNOWN` with funds reserved, not a clean fail.
+- CDP allows a signing operation that has no rules. Our first policy still signed `signHash` and `signMessage`. We had to reject every other route explicitly, then prove the runtime key cannot edit or detach that policy.
+- A live model often refuses the poisoned page, so a demo that waits for bait-taking never shows the firewall. We added a labeled compromised worker that always sends the same cataloged purchase, and we measure that path.
 
 ## What we're proud of
 
@@ -107,12 +114,9 @@ All on Base Sepolia, a test network whose USDC has no cash value:
 
 Policies set per tenant, the egress sandbox for deployed agents, batched settlement, and a catalog that merchants can apply to join.
 
-## Tracks
+## How we used generative AI
 
-- [ ] Coinbase: x402 payments, with a CDP server account and signing policy
-- [ ] Best Security Hack
-- [ ] Microsoft: only if hosting on Azure counts (see `SPONSOR-NOTES.md`)
-- [ ] Anthropic: if its track is open and rewards agent safety
+Claude is the task judge on the payment path and the live demo agent. Both call the Anthropic API with native `fetch`, not the SDK. A plan drafter and an escalation explainer were built as **advisory interfaces** (`docs/judge-advisories.md`) with a local CLI; they are not in the dashboard or the `/pay` pipeline. Do not claim they run in the product.
 
 ## Built with
 

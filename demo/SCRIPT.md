@@ -18,14 +18,39 @@ Know this before you rehearse. Lines from older drafts that contradict it are wr
 
 ## Pitch wording
 
-Cleared by Chunk 1 (CDP sections of `apps/gateway/src/payments/STATUS.md`). Use this sentence as written:
+**Elevator** (use as written; do not say “CDP caps everything”):
+
+> "Raijin is an x402 gateway to stop agent payment fraud before signing. Code checks payments against a human-approved task, a judge never sees attacker text, misses cut autonomy, CDP caps signatures."
+
+**Architecture, one sentence:**
+
+> "The agent holds only a mandate token. Every payment goes through deterministic checks first, then a judge that sees no attacker text, then a human if needed, and only then does a CDP account with its own policy sign it."
+
+```
+human → mandate (task, subjects, merchants, budget, expiry) → token
+agent ── POST /pay ──▶ gateway ─────────────────────────▶ CDP signer ─▶ x402 merchant
+                        1 claim (idempotency)                (policy)
+                        2 admit URL (catalog, canonicalize)
+                        3 pre-contact checks (no network yet)
+                        4 quote (402, no payment)
+                        5 Tier 0 caps + atomic reservation
+                        6 trust → grant hit / judge (Claude)
+                        7 human review (approval queue)
+                        8 committed approval → sign → send
+                        9 reconcile on-chain
+dashboard ◀── /stream (SSE)
+```
+
+Cleared by Chunk 1 (CDP sections of `apps/gateway/src/payments/STATUS.md`). After the elevator, use this sentence as written:
 
 > "CDP independently rejects the prohibited signatures we demonstrate."
 
 **Never say:**
 - that the payments use HTTPS. PriceScope runs on `http://localhost:4101`, under the gateway's exact-loopback exception;
 - that the CDP policy checks endpoints, subjects, plans or totals. It caps each signature's payee, value, token and type, and nothing else;
-- that "Coinbase caps everything even if our code is wrong."
+- that "Coinbase caps everything even if our code is wrong";
+- that we host on Azure, or that Azure is part of the stack;
+- that the plan drafter or escalation explainer run in the dashboard or `/pay`. Those are advisory APIs with a CLI (`docs/judge-advisories.md`). The live judge calls Anthropic with native `fetch`, not the SDK.
 
 ## Before the slot
 
@@ -198,7 +223,13 @@ It holds no wallet key and no merchant key. The gateway holds both. Deployment r
 Yes. That's outside what a payment gateway can see, and we say so up front. The gateway itself never contacts an uncataloged host, so it can't be used to send data there while fetching a quote. The demo agent's free fetch is locked to the attacker pages. An egress sandbox would close the free-request path for agents we deploy.
 
 **Can the judge itself be injected?**
-It never reads attacker text. Every untrusted field becomes a number, a length, a fixed-list value or a catalog label first. Each attack fixture carries a unique canary string, and CI fails if any canary appears in a judge request. Show `eval/cases/variants/`: canaries in paths, parameter names, page text and merchant metadata. V13 even puts a fake `SYSTEM:` order in the merchant's own 402 description.
+It never reads attacker text. Every untrusted field becomes a number, a length, a fixed-list value or a catalog label first. Unknown routes never reach it; they deny at admission. Each attack fixture carries a unique canary string, and CI fails if any canary appears in a judge request. Show `eval/cases/variants/`: canaries in paths, parameter names, page text and merchant metadata. V13 even puts a fake `SYSTEM:` order in the merchant's own 402 description.
+
+**How did you use generative AI?**
+Claude is the task judge on `/pay` (native `fetch` to the Anthropic API, not the SDK). The demo agent is a live model in Worker lab. A plan drafter and escalation explainer exist as **advisory interfaces** plus a CLI; they are not wired into the dashboard or the payment pipeline. Do not say they run in the product.
+
+**Why Microsoft / where is Azure?**
+Azure is not in the repo. Pitch customer understanding (a human-authorized task), responsible design (fail-closed, judge isolation, trust only tightens), and measured evidence — not hosting.
 
 **How is this different from Coinbase's spending limits?**
 We use them. The payment key is a CDP server account with a policy attached, and CDP refuses signatures outside it. But a signing policy only sees the signature: payee, amount, token, type. It can't tell a price lookup the task needs from one it doesn't; the request is identical. The gateway decides that before it ever asks CDP to sign.

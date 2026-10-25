@@ -21,10 +21,10 @@ Questions to take to the sponsor tables, from `Design.md` (Open questions for sp
 
 ## Microsoft
 
-**What are the judging criteria, and does hosting on Azure matter?**
+**What are the judging criteria?** Pitch customer understanding, responsible design and evidence — not hosting. Azure is not in the repo.
 - Answer:
 - Who / when:
-- Affects: whether to enter the track, and whether to host on Azure (Design.md stack: "Azure only if the Microsoft track criteria reward it")
+- Affects: the track list in `DEVPOST.md`, how the pitch opens
 
 ## Security track sponsor
 
